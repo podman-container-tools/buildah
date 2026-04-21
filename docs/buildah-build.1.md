@@ -18,7 +18,7 @@ The build context directory can be specified as the http(s) URL of an archive, g
 
 If no context directory is specified, then Buildah will assume the current working directory as build context, which should contain a Containerfile.
 
-Containerfiles ending with a ".in" suffix will be preprocessed via cpp(1).  This can be useful to decompose Containerfiles into several reusable parts that can be used via CPP's **#include** directive.  Notice, a Containerfile.in file can still be used by other tools when manually preprocessing them via `cpp -E`. Any comments ( Lines beginning with `#` ) in included Containerfile(s) that are not preprocess commands, will be printed as warnings during builds.
+Containerfiles ending with a ".in" suffix will be automatically preprocessed via cpp(1).  This can be useful to decompose Containerfiles into several reusable parts that can be used via CPP's **#include** directive.  Notice, a Containerfile.in file can still be used by other tools when manually preprocessing them via `cpp -E`. Any comments ( Lines beginning with `#` ) in included Containerfile(s) that are not preprocess commands, will be printed as warnings during builds.
 
 When the URL is an archive, the contents of the URL is downloaded to a temporary location and extracted before execution.
 
@@ -828,6 +828,13 @@ and can also be found by running `go tool dist list`.
 The `buildah build` command allows building images for all Linux architectures, even non-native architectures. When building images for a different architecture,  the `RUN` instructions require emulation software installed on the host provided by packages like `qemu-user-static`. Note: it is always preferred to build images on the native architecture if possible.
 
 **NOTE:** The `--platform` option may not be used in combination with the `--arch`, `--os`, or `--variant` options.
+
+**--preprocess**
+
+If specified, will always attempt to use the C Preprocessor cpp(1),
+even if the Containerfile doesn't end with the ".in" suffix.
+Note: You can also configure this behavior by setting the BUILDAH\_PREPROCESS
+environment variable to `1`, `true`, or `yes`.
 
 **--pull**
 

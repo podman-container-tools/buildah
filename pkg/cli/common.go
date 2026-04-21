@@ -95,6 +95,7 @@ type BudResults struct {
 	Timestamp              int64
 	OmitHistory            bool
 	OCIHooksDir            []string
+	Preprocess             bool
 	Pull                   string
 	PullAlways             bool
 	PullNever              bool
@@ -250,6 +251,7 @@ func GetBudFlags(flags *BudResults) pflag.FlagSet {
 	fs.BoolVar(&flags.InheritLabels, "inherit-labels", true, "inherit the labels from the base image or base stages.")
 	fs.BoolVar(&flags.InheritAnnotations, "inherit-annotations", true, "inherit the annotations from the base image or base stages.")
 	fs.StringArrayVar(&flags.CPPFlags, "cpp-flag", []string{}, "set additional flag to pass to C preprocessor (cpp)")
+	fs.BoolVar(&flags.Preprocess, "preprocess", DefaultPreprocess(), "use the C preprocessor (cpp) on a Dockerfile, regardless of the file suffix. Use BUILDAH_PREPROCESS environment variable to change default.")
 	fs.BoolVar(&flags.CreatedAnnotation, "created-annotation", true, `set an "org.opencontainers.image.created" annotation in the image`)
 	fs.StringVar(&flags.Creds, "creds", "", "use `[username[:password]]` for accessing the registry")
 	fs.StringVarP(&flags.CWOptions, "cw", "", "", "confidential workload `options`")
@@ -539,6 +541,16 @@ func DefaultIsolation() string {
 func DefaultHistory() bool {
 	history := os.Getenv("BUILDAH_HISTORY")
 	if strings.ToLower(history) == "true" || history == "1" {
+		return true
+	}
+	return false
+}
+
+// DefaultPreprocess returns true if BUILDAH_PREPROCESS is set to "1" or "true"
+// otherwise it returns false
+func DefaultPreprocess() bool {
+	preprocess := os.Getenv("BUILDAH_PREPROCESS")
+	if strings.ToLower(preprocess) == "true" || strings.ToLower(preprocess) == "yes" || preprocess == "1" {
 		return true
 	}
 	return false

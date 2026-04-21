@@ -4126,6 +4126,66 @@ _EOF
   expect_output --substring "Ignoring <stdin>:5:2: error: #error"
 }
 
+@test "bud with preprocessor, via --preprocess" {
+  _prefetch busybox
+  target=alpine-image
+  run_buildah build $WITH_POLICY_JSON -t ${target} --preprocess -f Decomposed.tpl $BUDFILES/preprocess
+}
+
+@test "bud with preprocessor-requiring containerfile, without --preprocess" {
+  _prefetch busybox
+  target=alpine-image
+  run_buildah 125 build $WITH_POLICY_JSON -t ${target} -f Decomposed.tpl $BUDFILES/preprocess
+  expect_output --substring 'Build error: Unknown instruction: "RUNHELLO"'
+}
+
+@test "bud with preprocessor error, via --preprocess" {
+  _prefetch busybox
+  target=alpine-image
+  run_buildah bud $WITH_POLICY_JSON -t ${target} --preprocess -f Error.tpl $BUDFILES/preprocess
+  expect_output --substring "Ignoring <stdin>:5:2: error: #error"
+}
+
+@test "bud with preprocessor, via env var 1" {
+  _prefetch busybox
+  target=alpine-image
+  BUILDAH_PREPROCESS=1 run_buildah build $WITH_POLICY_JSON -t ${target} -f Decomposed.tpl $BUDFILES/preprocess
+}
+
+@test "bud with preprocessor, via env var true" {
+  _prefetch busybox
+  target=alpine-image
+  BUILDAH_PREPROCESS=true run_buildah build $WITH_POLICY_JSON -t ${target} -f Decomposed.tpl $BUDFILES/preprocess
+}
+
+@test "bud with preprocessor, via env var yes" {
+  _prefetch busybox
+  target=alpine-image
+  BUILDAH_PREPROCESS=yes run_buildah build $WITH_POLICY_JSON -t ${target} -f Decomposed.tpl $BUDFILES/preprocess
+}
+
+@test "bud with preprocessor error, via env var" {
+  _prefetch busybox
+  target=alpine-image
+  BUILDAH_PREPROCESS=1 run_buildah bud $WITH_POLICY_JSON -t ${target} -f Error.tpl $BUDFILES/preprocess
+  expect_output --substring "Ignoring <stdin>:5:2: error: #error"
+}
+
+@test "bud with preprocessor-requiring containerfile.in, with preprocess force disabled" {
+  _prefetch busybox
+  target=alpine-image
+  starthttpd $BUDFILES/preprocess
+  run_buildah 125 build $WITH_POLICY_JSON -t ${target} --preprocess=false -f Decomposed.in $BUDFILES/preprocess
+  expect_output --substring 'Build error: Unknown instruction: "RUNHELLO"'
+}
+
+@test "bud with preprocessor-requiring containerfile, via explicit cli flag, defaulted on via env var" {
+  _prefetch busybox
+  target=alpine-image
+  BUILDAH_PREPROCESS=1 run_buildah 125 build $WITH_POLICY_JSON -t ${target} --preprocess=false -f Decomposed.tpl $BUDFILES/preprocess
+  expect_output --substring 'Build error: Unknown instruction: "RUNHELLO"'
+}
+
 @test "bud-with-rejected-name" {
   target=ThisNameShouldBeRejected
   run_buildah 125 build -q $WITH_POLICY_JSON -t ${target} $BUDFILES/from-scratch
