@@ -141,6 +141,30 @@ func BuildDockerfiles(ctx context.Context, store storage.Store, options define.B
 			if err != nil {
 				return "", nil, err
 			}
+			if options.ContextDirectory != "" {
+				contextAbs, err := filepath.Abs(options.ContextDirectory)
+				if err != nil {
+					return "", nil, fmt.Errorf("resolving context directory %q: %w", options.ContextDirectory, err)
+				}
+				contextAbs, err = filepath.EvalSymlinks(contextAbs)
+				if err != nil {
+					return "", nil, fmt.Errorf("resolving context directory %q: %w", options.ContextDirectory, err)
+				}
+				dfileAbs, err := filepath.Abs(dfile)
+				if err != nil {
+					return "", nil, fmt.Errorf("resolving containerfile %q: %w", dfile, err)
+				}
+				if rel, err := filepath.Rel(contextAbs, dfileAbs); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+					resolved, err := filepath.EvalSymlinks(dfileAbs)
+					if err != nil {
+						return "", nil, fmt.Errorf("resolving containerfile %q: %w", dfile, err)
+					}
+					resolvedRel, err := filepath.Rel(contextAbs, resolved)
+					if err != nil || resolvedRel == ".." || strings.HasPrefix(resolvedRel, ".."+string(filepath.Separator)) {
+						return "", nil, fmt.Errorf("containerfile %q resolves to %q outside of the build context %q", dfile, resolved, contextAbs)
+					}
+				}
+			}
 
 			var contents *os.File
 			// If given a directory error out since `-f` does not supports path to directory

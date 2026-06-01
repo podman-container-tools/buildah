@@ -38,6 +38,18 @@ func TestFilesClosedProperlyByBuildDockerfiles(t *testing.T) {
 	}
 }
 
+func TestDockerfileSymlinkOutsideContext(t *testing.T) {
+	tmpDir := t.TempDir()
+	contextDir := filepath.Join(tmpDir, "context")
+	assert.NoError(t, os.Mkdir(contextDir, 0o755))
+	dockerfile := filepath.Join(tmpDir, "Dockerfile")
+	assert.NoError(t, os.WriteFile(dockerfile, []byte("FROM scratch"), 0o644))
+	assert.NoError(t, os.Symlink("../Dockerfile", filepath.Join(contextDir, "Dockerfile")))
+
+	_, _, err := BuildDockerfiles(context.Background(), nil, define.BuildOptions{ContextDirectory: contextDir}, filepath.Join(contextDir, "Dockerfile"))
+	assert.ErrorContains(t, err, "outside of the build context")
+}
+
 // currentOpenFiles makes an effort at returning a map of which files are currently
 // open by our process. We don't fail if we can't follow symlinks from fds as this
 // perhaps they now longer exist between when we read them and when we tried to use
