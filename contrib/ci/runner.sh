@@ -45,6 +45,7 @@ if [[ "$TEST" == "conformance" ]]; then
             sudo dnf install -y docker || sudo dnf install -y moby-engine
             ;;
         debian)
+            sudo apt-get update
             sudo apt-get install -y --no-install-recommends docker.io
             ;;
     esac
