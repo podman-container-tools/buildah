@@ -160,7 +160,10 @@ func BuildDockerfiles(ctx context.Context, store storage.Store, options define.B
 						return "", nil, fmt.Errorf("resolving containerfile %q: %w", dfile, err)
 					}
 					resolvedRel, err := filepath.Rel(contextAbs, resolved)
-					if err != nil || resolvedRel == ".." || strings.HasPrefix(resolvedRel, ".."+string(filepath.Separator)) {
+					if err != nil {
+						return "", nil, fmt.Errorf("resolving containerfile %q relative to context %q: %w", dfile, contextAbs, err)
+					}
+					if resolvedRel == ".." || strings.HasPrefix(resolvedRel, ".."+string(filepath.Separator)) {
 						return "", nil, fmt.Errorf("containerfile %q resolves to %q outside of the build context %q", dfile, resolved, contextAbs)
 					}
 				}

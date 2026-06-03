@@ -44,10 +44,18 @@ func TestDockerfileSymlinkOutsideContext(t *testing.T) {
 	assert.NoError(t, os.Mkdir(contextDir, 0o755))
 	dockerfile := filepath.Join(tmpDir, "Dockerfile")
 	assert.NoError(t, os.WriteFile(dockerfile, []byte("FROM scratch"), 0o644))
-	assert.NoError(t, os.Symlink("../Dockerfile", filepath.Join(contextDir, "Dockerfile")))
-
-	_, _, err := BuildDockerfiles(context.Background(), nil, define.BuildOptions{ContextDirectory: contextDir}, filepath.Join(contextDir, "Dockerfile"))
-	assert.ErrorContains(t, err, "outside of the build context")
+	for _, testCase := range []struct {
+		name   string
+		target string
+	}{
+		{name: "relative", target: "../Dockerfile"},
+		{name: "absolute", target: dockerfile},
+	} {
+		linkPath := filepath.Join(contextDir, "Dockerfile."+testCase.name)
+		assert.NoError(t, os.Symlink(testCase.target, linkPath))
+		_, _, err := BuildDockerfiles(context.Background(), nil, define.BuildOptions{ContextDirectory: contextDir}, linkPath)
+		assert.ErrorContains(t, err, "outside of the build context")
+	}
 }
 
 // currentOpenFiles makes an effort at returning a map of which files are currently
