@@ -620,6 +620,35 @@ function configure_and_check_user() {
 	run_buildah 42 run ${cid} sh -c 'exit 42'
 }
 
+@test "run container exits after stdio timeout" {
+	skip_if_no_runtime
+	skip_if_chroot
+
+	_prefetch alpine
+	run_buildah from --quiet --pull=false $WITH_POLICY_JSON alpine
+	cid=$output
+
+	# Write a script that closes stdout/stderr explicitly then hangs.
+	# Closing stdio triggers finishedCopy in buildah, which starts the
+	# stop timeout. The trap ignores SIGTERM so the process won't exit
+	# gracefully, forcing buildah to hit the deadline.
+	cat > ${TEST_SCRATCH_DIR}/hang.sh << 'HANG'
+#!/bin/sh
+trap "" TERM
+echo done
+exec 1>&- 2>&-
+sleep 120
+HANG
+	chmod +x ${TEST_SCRATCH_DIR}/hang.sh
+
+	cat > ${TEST_SCRATCH_DIR}/containers.conf << EOF
+[engine]
+stop_timeout = 5
+EOF
+	CONTAINERS_CONF=${TEST_SCRATCH_DIR}/containers.conf run_buildah '?' --log-level warn run -v ${TEST_SCRATCH_DIR}/hang.sh:/hang.sh:z $cid /hang.sh
+	expect_output --substring "timed out waiting for container"
+}
+
 @test "run-exit-status on non executable" {
 	skip_if_no_runtime
 
