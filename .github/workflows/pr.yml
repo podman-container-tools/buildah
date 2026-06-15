@@ -1,6 +1,8 @@
 name: validate
 on:
   pull_request:
+    branches:
+      - main
 
 jobs:
   commit:
@@ -14,10 +16,25 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Workaround limitation/bug in commit-message-checker-with-regex (action below) where
+      # it breaks if there are "too many" commits in the PR.
+      # Ref: https://github.com/tim-actions/commit-message-checker-with-regex/issues/7
+
+      - name: Reduce commit data
+        run: >
+          echo '${{ steps.get-pr-commits.outputs.commits }}' | \
+              jq --monochrome-output --compact-output '[.[] | {"sha": .sha, "commit":{ "message": .commit.message }}]' \
+              > filtered-commits.json
+
+      - name: Load filtered commit data into output
+        id: 'get-pr-commit-messages'
+        run: >
+          echo "commit-messages=$(cat filtered-commits.json)" >> $GITHUB_OUTPUT
+
       - if: contains(github.head_ref, 'renovate/') != true
         name: check subject line length
         uses: tim-actions/commit-message-checker-with-regex@094fc16ff83d04e2ec73edb5eaf6aa267db33791 # v0.3.2
         with:
-          commits: ${{ steps.get-pr-commits.outputs.commits }}
+          commits: ${{ steps.get-pr-commit-messages.outputs.commit-messages }}
           pattern: '^.{0,72}(\n.*)*$'
           error: 'Subject too long (max 72)'
