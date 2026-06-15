@@ -193,7 +193,16 @@ func runCmd(c *cobra.Command, args []string, iopts runInputOptions) error {
 	if err != nil {
 		return fmt.Errorf("building system context: %w", err)
 	}
-	mounts, mountedImages, intermediateMounts, _, targetLocks, err := volumes.GetVolumes(systemContext, store, builder.MountLabel, iopts.volumes, iopts.mounts, iopts.contextDir, builder.IDMappingOptions, iopts.workingDir, tmpDir)
+
+	var excludes []string
+	if iopts.contextDir != "" {
+		excludes, _, err = parse.ContainerIgnoreFile(iopts.contextDir, "", nil)
+		if err != nil {
+			return fmt.Errorf("parsing ignore file under context directory %s: %w", iopts.contextDir, err)
+		}
+	}
+
+	mounts, mountedImages, intermediateMounts, _, targetLocks, err := volumes.GetVolumes(systemContext, store, builder.MountLabel, iopts.volumes, iopts.mounts, iopts.contextDir, builder.IDMappingOptions, iopts.workingDir, tmpDir, excludes)
 	if err != nil {
 		return err
 	}

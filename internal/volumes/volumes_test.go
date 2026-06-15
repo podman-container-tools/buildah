@@ -33,13 +33,13 @@ func TestGetMount(t *testing.T) {
 
 	t.Run("GetBindMount", func(t *testing.T) {
 		for _, argNeeder := range []string{"from", "bind-propagation", "src", "source", "target", "dst", "destination", "relabel"} {
-			_, _, _, _, err := GetBindMount(sys, []string{argNeeder}, tempDir, store, "", nil, tempDir, tempDir)
+			_, _, _, _, err := GetBindMount(sys, []string{argNeeder}, tempDir, store, "", nil, tempDir, tempDir, nil)
 			assert.ErrorIsf(t, err, errBadOptionArg, "option %q was supposed to have an arg, but wasn't flagged when it didn't have one", argNeeder)
-			_, _, _, _, err = GetBindMount(sys, []string{argNeeder + "="}, tempDir, store, "", nil, tempDir, tempDir)
+			_, _, _, _, err = GetBindMount(sys, []string{argNeeder + "="}, tempDir, store, "", nil, tempDir, tempDir, nil)
 			assert.ErrorIsf(t, err, errBadOptionArg, "option %q was supposed to have an arg, but wasn't flagged when it didn't have one", argNeeder)
 		}
 		for _, argHater := range []string{"bind-nonrecursive", "nodev", "noexec", "nosuid", "ro", "readonly", "rw", "readwrite", "shared", "rshared", "private", "rprivate", "slave", "rslave", "Z", "z", "U", "no-dereference"} {
-			_, _, _, _, err := GetBindMount(sys, []string{argHater + "=nonce"}, tempDir, store, "", nil, tempDir, tempDir)
+			_, _, _, _, err := GetBindMount(sys, []string{argHater + "=nonce"}, tempDir, store, "", nil, tempDir, tempDir, nil)
 			assert.ErrorIsf(t, err, errBadOptionNoArg, "option %q is not supposed to have an arg, but wasn't flagged when it tried to supply one", argHater)
 		}
 	})

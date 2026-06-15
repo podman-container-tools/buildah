@@ -353,15 +353,6 @@ function configure_and_check_user() {
 @test "run overlay --volume with custom upper and workdir" {
 	skip_if_no_runtime
 
-	zflag=
-	if which selinuxenabled > /dev/null 2> /dev/null ; then
-		if selinuxenabled ; then
-			zflag=z
-		fi
-	fi
-
-	find_oci_runtime
-
 	${OCI} --version
 	_prefetch alpine
 	run_buildah from --quiet --pull=false $WITH_POLICY_JSON alpine
@@ -370,16 +361,16 @@ function configure_and_check_user() {
 	mkdir -p ${TEST_SCRATCH_DIR}/workdir
 	mkdir -p ${TEST_SCRATCH_DIR}/lower
 
-	echo 'hello' >> ${TEST_SCRATCH_DIR}/lower/hello
+	echo 'hello' > ${TEST_SCRATCH_DIR}/lower/hello
 
 	# As a baseline, this should succeed.
-	run_buildah run -v ${TEST_SCRATCH_DIR}/lower:/test:O,upperdir=${TEST_SCRATCH_DIR}/upperdir,workdir=${TEST_SCRATCH_DIR}/workdir${zflag:+:${zflag}}  $cid cat /test/hello
+	run_buildah run -v ${TEST_SCRATCH_DIR}/lower:/test:O,upperdir=${TEST_SCRATCH_DIR}/upperdir,workdir=${TEST_SCRATCH_DIR}/workdir $cid cat /test/hello
 	expect_output "hello"
-	run_buildah run -v ${TEST_SCRATCH_DIR}/lower:/test:O,upperdir=${TEST_SCRATCH_DIR}/upperdir,workdir=${TEST_SCRATCH_DIR}/workdir${zflag:+:${zflag}}  $cid sh -c 'echo "world" > /test/world'
+	run_buildah run -v ${TEST_SCRATCH_DIR}/lower:/test:O,upperdir=${TEST_SCRATCH_DIR}/upperdir,workdir=${TEST_SCRATCH_DIR}/workdir $cid sh -c 'echo "world" > /test/world'
 
-	#upper dir should persist content
+	# upper dir should persist content
 	result="$(< ${TEST_SCRATCH_DIR}/upperdir/world)"
-	test "$result" == "world"
+	assert "$result" == "world"
 }
 
 @test "run --volume with U flag" {
@@ -447,24 +438,35 @@ function configure_and_check_user() {
 	run_buildah from --quiet --pull=false $WITH_POLICY_JSON alpine
 	cid=$output
 	mkdir -p ${TEST_SCRATCH_DIR}/was:empty
+	if test $(stat -f -c %T ${TEST_SCRATCH_DIR}/was:empty) = overlayfs; then
+		# we'll try to use fuse-overlayfs, which at least through 1.13
+		# can't accept ":" in layer locations, escaped or not, so bail
+		# now instead of breaking the whole thing
+		skip "unable to test read-write bind from an overlay location that includes colon characters"
+	fi
 	# As a baseline, this should succeed.
-	run_buildah run --mount type=tmpfs,dst=/var/tmpfs-not-empty                                                      $cid touch /var/tmpfs-not-empty/testfile
+	local mount=type=tmpfs,dst=/var/tmpfs-not-empty
+	run_buildah   run --mount $mount $cid touch /var/tmpfs-not-empty/testfile
 	# This should succeed, but the writes should effectively be discarded
-	run_buildah run --mount type=bind,src=${TEST_SCRATCH_DIR}/was:empty,dst=/var/not-empty,rw${zflag}                $cid touch /var/not-empty/testfile
+	local mount=type=bind,src=${TEST_SCRATCH_DIR}/was:empty,dst=/var/not-empty,rw${zflag}
+	run_buildah   run --mount $mount $cid touch /var/not-empty/testfile
 	if test -r ${TEST_SCRATCH_DIR}/was:empty/testfile ; then
 		die write to mounted type=bind was not discarded, ${TEST_SCRATCH_DIR}/was:empty/testfile exists
 	fi
 	# If we're parsing the options at all, this should be read-only, so it should fail.
-	run_buildah 1 run --mount type=bind,src=${TEST_SCRATCH_DIR}/was:empty,dst=/var/not-empty,ro${zflag}              $cid touch /var/not-empty/testfile
+	local mount=type=bind,src=${TEST_SCRATCH_DIR}/was:empty,dst=/var/not-empty,ro${zflag}
+	run_buildah 1 run --mount $mount $cid touch /var/not-empty/testfile
 	# Even if the parent directory doesn't exist yet, this should succeed, but again the write should be discarded.
-	run_buildah run --mount type=bind,src=${TEST_SCRATCH_DIR}/was:empty,dst=/var/multi-level/subdirectory,rw${zflag} $cid touch /var/multi-level/subdirectory/testfile
+	local mount=type=bind,src=${TEST_SCRATCH_DIR}/was:empty,dst=/var/multi-level/subdirectory,rw${zflag}
+	run_buildah   run --mount $mount $cid touch /var/multi-level/subdirectory/testfile
 	if test -r ${TEST_SCRATCH_DIR}/was:empty/testfile ; then
 		die write to mounted type=bind was not discarded, ${TEST_SCRATCH_DIR}/was:empty/testfile exists
 	fi
 	# And check the same for file volumes, which make life harder because the kernel's overlay
 	# filesystem really only wants to be dealing with directories.
 	: > ${TEST_SCRATCH_DIR}/was:empty/testfile
-	run_buildah run --mount type=bind,src=${TEST_SCRATCH_DIR}/was:empty/testfile,dst=/var/different-multi-level/subdirectory/testfile,rw${zflag} $cid sh -c 'echo wrote > /var/different-multi-level/subdirectory/testfile'
+	local mount=type=bind,src=${TEST_SCRATCH_DIR}/was:empty/testfile,dst=/var/different-multi-level/subdirectory/testfile,rw${zflag}
+	run_buildah   run --mount $mount $cid sh -c 'echo wrote > /var/different-multi-level/subdirectory/testfile'
 	if test -s ${TEST_SCRATCH_DIR}/was:empty/testfile ; then
 		die write to mounted type=bind was not discarded, ${TEST_SCRATCH_DIR}/was:empty/testfile was written to
 	fi

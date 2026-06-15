@@ -3,3 +3,4 @@ ARG INPUTPATH_1=subdir
 RUN mkdir /test
 # use option z if selinux is enabled
 RUN --mount=type=bind,source=${INPUTPATH_1:?}/,target=/test,z cat /test/input_file
+RUN --mount=type=bind,source=${INPUTPATH_1:?}/,target=/test,z --mount=type=bind,source=${INPUTPATH_1:?}/,target=/test2,rw,z cmp /test/input_file /test2/input_file

@@ -74,6 +74,13 @@ load helpers
   mkdir ${TEST_SCRATCH_DIR}/a:lower
   touch ${TEST_SCRATCH_DIR}/a:lower/foo
 
+  if test $(stat -f -c %T ${TEST_SCRATCH_DIR}/a:lower) = overlayfs; then
+    # we'll try to use fuse-overlayfs, which at least through 1.13
+    # can't accept ":" in layer locations, escaped or not, so bail
+    # now instead of breaking the whole thing
+    skip "unable to test bind from an overlay location that includes colon characters"
+  fi
+
   # This should succeed.
   # Add double backslash, because shell will escape.
   run_buildah from --quiet -v ${TEST_SCRATCH_DIR}/a\\:lower:/a\\:lower:O --quiet $WITH_POLICY_JSON $image

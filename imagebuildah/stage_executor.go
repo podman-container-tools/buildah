@@ -34,6 +34,7 @@ import (
 	"go.podman.io/buildah/internal/tmpdir"
 	"go.podman.io/buildah/internal/urlsource"
 	internalUtil "go.podman.io/buildah/internal/util"
+	"go.podman.io/buildah/pkg/overlay"
 	"go.podman.io/buildah/pkg/parse"
 	"go.podman.io/buildah/pkg/rusage"
 	"go.podman.io/buildah/pkg/sourcepolicy"
@@ -321,12 +322,24 @@ func (s *stageExecutor) volumeCacheRestoreVFS() (err error) {
 // using it as a lower for an overlay mount in the same location, and then
 // discarding the upper.
 func (s *stageExecutor) volumeCacheSaveOverlay() (mounts []specs.Mount, err error) {
+	containerDir, err := s.executor.store.ContainerDirectory(s.builder.ContainerID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to locate temporary directory for container")
+	}
+	volumeCacheDir := filepath.Join(containerDir, "volume-cache")
+	options := overlay.Options{
+		MountLabel: s.builder.MountLabel,
+		ForceMount: true,
+	}
 	for cachedPath := range s.volumeCache {
 		volumePath := filepath.Join(s.mountPoint, cachedPath)
-		mount := specs.Mount{
-			Source:      volumePath,
-			Destination: cachedPath,
-			Options:     []string{"O", "private"},
+		tmpdir, err := overlay.TempDir(volumeCacheDir, 0, 0)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create temporary directory for cache for volumes")
+		}
+		mount, err := overlay.MountWithOptions(tmpdir, volumePath, cachedPath, &options)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create temporary directory for cache for volumes")
 		}
 		mounts = append(mounts, mount)
 	}
@@ -335,7 +348,12 @@ func (s *stageExecutor) volumeCacheSaveOverlay() (mounts []specs.Mount, err erro
 
 // Reset the contents of each of the executor's list of volumes.
 func (s *stageExecutor) volumeCacheRestoreOverlay() error {
-	return nil
+	containerDir, err := s.executor.store.ContainerDirectory(s.builder.ContainerID)
+	if err != nil {
+		return fmt.Errorf("unable to locate temporary directory for container")
+	}
+	volumeCacheDir := filepath.Join(containerDir, "volume-cache")
+	return overlay.CleanupContent(volumeCacheDir)
 }
 
 // Save the contents of each of the executor's list of volumes for which we
@@ -484,7 +502,7 @@ func (s *stageExecutor) performCopy(excludes []string, copies ...imagebuilder.Co
 			if fromErr != nil {
 				return fmt.Errorf("unable to resolve argument %q: %w", copy.From, fromErr)
 			}
-			var additionalBuildContext *define.AdditionalBuildContext
+			var additionalBuildContext *additionalBuildContext
 			if foundContext, ok := s.executor.additionalBuildContexts[from]; ok {
 				additionalBuildContext = foundContext
 			} else {
@@ -506,7 +524,7 @@ func (s *stageExecutor) performCopy(excludes []string, copies ...imagebuilder.Co
 					if additionalBuildContext.IsURL {
 						// Check if following buildContext was already
 						// downloaded before in any other RUN step. If not
-						// download it and populate DownloadCache field for
+						// download it and populate DownloadedCache field for
 						// future RUN steps.
 						if additionalBuildContext.DownloadedCache == "" {
 							// additional context contains a tar file
@@ -521,6 +539,7 @@ func (s *stageExecutor) performCopy(excludes []string, copies ...imagebuilder.Co
 							contextDir = filepath.Join(path, subdir)
 							// populate cache for next RUN step
 							additionalBuildContext.DownloadedCache = contextDir
+							additionalBuildContext.cleanupDirectory = path
 						} else {
 							contextDir = additionalBuildContext.DownloadedCache
 						}
@@ -727,7 +746,7 @@ func (s *stageExecutor) runStageMountPoints(mountList []string) (map[string]inte
 						if additionalBuildContext.IsURL {
 							// Check if following buildContext was already
 							// downloaded before in any other RUN step. If not
-							// download it and populate DownloadCache field for
+							// download it and populate DownloadedCache field for
 							// future RUN steps.
 							if additionalBuildContext.DownloadedCache == "" {
 								// additional context contains a tar file
@@ -742,6 +761,7 @@ func (s *stageExecutor) runStageMountPoints(mountList []string) (map[string]inte
 								mountPoint = filepath.Join(path, subdir)
 								// populate cache for next RUN step
 								additionalBuildContext.DownloadedCache = mountPoint
+								additionalBuildContext.cleanupDirectory = path
 							} else {
 								mountPoint = additionalBuildContext.DownloadedCache
 							}
@@ -876,6 +896,7 @@ func (s *stageExecutor) Run(run imagebuilder.Run, config docker.Config) error {
 		Args:                 s.executor.runtimeArgs,
 		Cmd:                  config.Cmd,
 		ContextDir:           s.executor.contextDir,
+		ContextDirExcludes:   s.executor.excludes,
 		ConfigureNetwork:     s.executor.configureNetwork,
 		Entrypoint:           config.Entrypoint,
 		Env:                  config.Env,

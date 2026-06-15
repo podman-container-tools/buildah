@@ -115,6 +115,8 @@ type RunOptions struct {
 	WorkingDir string
 	// ContextDir is used as the root directory for the source location for mounts that are of type "bind".
 	ContextDir string
+	// ContextDirExcludes is the set of items to ignore if we need to copy the contents of ContextDir somewhere else.
+	ContextDirExcludes []string
 	// Shell is default shell to run in a container.
 	Shell string
 	// Cmd is an override for the configured default command.

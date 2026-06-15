@@ -1320,7 +1320,7 @@ func init() {
 // If this succeeds, after the command which uses the spec finishes running,
 // the caller must call b.cleanupRunMounts() on the returned runMountArtifacts
 // structure.
-func (b *Builder) setupMounts(mountPoint string, spec *specs.Spec, bundlePath string, optionMounts []specs.Mount, bindFiles map[string]string, builtinVolumes []string, compatBuiltinVolumes types.OptionalBool, volumeMounts []string, runFileMounts []string, runMountInfo runMountInfo) (*runMountArtifacts, error) {
+func (b *Builder) setupMounts(mountPoint string, spec *specs.Spec, bundlePath string, optionMounts []specs.Mount, bindFiles map[string]string, builtinVolumes []string, compatBuiltinVolumes types.OptionalBool, volumeMounts []string, runFileMounts []string, runMountInfo runMountInfo, excludes []string) (*runMountArtifacts, error) {
 	// Start building a new list of mounts.
 	var mounts []specs.Mount
 	haveMount := func(destination string) bool {
@@ -1378,7 +1378,7 @@ func (b *Builder) setupMounts(mountPoint string, spec *specs.Spec, bundlePath st
 		processGID: int(processGID),
 	}
 	// Get the list of mounts that are just for this Run() call.
-	runMounts, mountArtifacts, err := b.runSetupRunMounts(bundlePath, runFileMounts, runMountInfo, idMaps)
+	runMounts, mountArtifacts, err := b.runSetupRunMounts(bundlePath, runFileMounts, runMountInfo, idMaps, excludes)
 	if err != nil {
 		return nil, err
 	}
@@ -1506,7 +1506,7 @@ func runSetupBuiltinVolumes(mountLabel, mountPoint, containerDir string, builtin
 // If this function succeeds, the caller must free the returned
 // runMountArtifacts by calling b.cleanupRunMounts() after the command being
 // executed with those mounts has finished.
-func (b *Builder) runSetupRunMounts(bundlePath string, mounts []string, sources runMountInfo, idMaps IDMaps) ([]specs.Mount, *runMountArtifacts, error) {
+func (b *Builder) runSetupRunMounts(bundlePath string, mounts []string, sources runMountInfo, idMaps IDMaps, excludes []string) ([]specs.Mount, *runMountArtifacts, error) {
 	tmpFiles := make([]string, 0, len(mounts))
 	mountImages := make([]string, 0, len(mounts))
 	intermediateMounts := make([]string, 0, len(mounts))
@@ -1601,7 +1601,7 @@ func (b *Builder) runSetupRunMounts(bundlePath string, mounts []string, sources 
 					return nil, nil, err
 				}
 			}
-			mountSpec, image, intermediateMount, overlayDir, err := b.getBindMount(tokens, sources.SystemContext, sources.ContextDir, sources.StageMountPoints, idMaps, sources.WorkDir, bundleMountsDir)
+			mountSpec, image, intermediateMount, overlayDir, err := b.getBindMount(tokens, sources.SystemContext, sources.ContextDir, sources.StageMountPoints, idMaps, sources.WorkDir, bundleMountsDir, excludes)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -1661,12 +1661,12 @@ func (b *Builder) runSetupRunMounts(bundlePath string, mounts []string, sources 
 	return finalMounts, artifacts, nil
 }
 
-func (b *Builder) getBindMount(tokens []string, sys *types.SystemContext, contextDir string, stageMountPoints map[string]internal.StageMountDetails, idMaps IDMaps, workDir, tmpDir string) (*specs.Mount, string, string, string, error) {
+func (b *Builder) getBindMount(tokens []string, sys *types.SystemContext, contextDir string, stageMountPoints map[string]internal.StageMountDetails, idMaps IDMaps, workDir, tmpDir string, excludes []string) (*specs.Mount, string, string, string, error) {
 	if contextDir == "" {
 		return nil, "", "", "", errors.New("context directory for current run invocation is not configured")
 	}
 	var optionMounts []specs.Mount
-	optionMount, image, intermediateMount, overlayMount, err := volumes.GetBindMount(sys, tokens, contextDir, b.store, b.MountLabel, stageMountPoints, workDir, tmpDir)
+	optionMount, image, intermediateMount, overlayMount, err := volumes.GetBindMount(sys, tokens, contextDir, b.store, b.MountLabel, stageMountPoints, workDir, tmpDir, excludes)
 	if err != nil {
 		return nil, "", "", "", err
 	}

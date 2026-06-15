@@ -57,8 +57,8 @@ type Options struct {
 
 // TempDir generates a uniquely-named directory under ${containerDir}/overlay
 // which can be used as a parent directory for the upper and working
-// directories for an overlay mount, creates "upper" and "work" directories
-// beneath it, and then returns the path of the new directory.
+// directories for an overlay mount, creates "upper", "work", and "merge"
+// directories beneath it, and then returns the path of the new directory.
 func TempDir(containerDir string, rootUID, rootGID int) (string, error) {
 	contentDir := filepath.Join(containerDir, "overlay")
 	if err := idtools.MkdirAllAndChown(contentDir, 0o700, idtools.IDPair{UID: rootUID, GID: rootGID}); err != nil {
@@ -126,12 +126,10 @@ func findMountProgram(graphOptions []string) string {
 	}
 
 	for _, i := range graphOptions {
-		s := strings.SplitN(i, "=", 2)
-		if len(s) != 2 {
+		key, val, ok := strings.Cut(i, "=")
+		if !ok {
 			continue
 		}
-		key := s[0]
-		val := s[1]
 		if _, has := mountMap[key]; has {
 			return val
 		}
@@ -146,7 +144,7 @@ func mountWithMountProgram(mountProgram, overlayOptions, mergeDir string) error 
 	cmd := exec.Command(mountProgram, "-o", overlayOptions, mergeDir)
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("exec %s: %w", mountProgram, err)
+		return fmt.Errorf("exec %s -o %q %q: %w", mountProgram, overlayOptions, mergeDir, err)
 	}
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/selinux/go-selinux/label"
 	"go.podman.io/storage/pkg/unshare"
+	"golang.org/x/sys/unix"
 )
 
 // MountWithOptions creates ${contentDir}/merge, where ${contentDir} was
@@ -107,11 +109,10 @@ func MountWithOptions(contentDir, source, dest string, opts *Options) (mount spe
 		return mount, nil
 	}
 
+	// A mount_program is not specified: fallback to try mounting native overlay.
 	if unshare.IsRootless() {
-		// If a mount_program is not specified, fallback to try mounting native overlay.
 		overlayOptions = fmt.Sprintf("%s,userxattr", overlayOptions)
 	}
-
 	mount.Source = mergeDir
 	mount.Destination = dest
 	mount.Type = "overlay"
@@ -119,7 +120,28 @@ func MountWithOptions(contentDir, source, dest string, opts *Options) (mount spe
 
 	if opts.ForceMount {
 		if err := mountNatively(overlayOptions, mergeDir); err != nil {
-			return mount, err
+			if opts.ReadOnly {
+				// We don't expect any kinds of error that we can respond to.
+				return mount, err
+			}
+			if errors.Is(err, syscall.EINVAL) {
+				// We couldn't do that with the kernel's built-in overlay
+				// filesystem; check if it was because the upper we made is
+				// already on an overlay filesystem, and if so, make a
+				// last desperate effort to find fuse-overlayfs, which doesn't
+				// mind us doing stuff like this.
+				upperDir := filepath.Join(contentDir, "upper")
+				var fs syscall.Statfs_t
+				if err2 := syscall.Statfs(upperDir, &fs); err2 == nil && fs.Type == unix.OVERLAYFS_SUPER_MAGIC {
+					if path, err3 := exec.LookPath("fuse-overlayfs"); err3 == nil {
+						mountProgram = path
+						err = mountWithMountProgram(mountProgram, overlayOptions, mergeDir)
+					}
+				}
+			}
+			if err != nil {
+				return mount, err
+			}
 		}
 
 		mount.Source = mergeDir
