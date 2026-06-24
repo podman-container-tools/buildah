@@ -1128,8 +1128,9 @@ func pathIsExcluded(root, path string, pm *fileutils.PatternMatcher) (string, bo
 		return rel, false, nil
 	}
 	// Matches uses filepath.FromSlash() to convert candidates before
-	// checking if they match the patterns it's been given, implying that
-	// it expects Unix-style paths.
+	// checking if they match the patterns it's been given, implying
+	// that it expects Unix-style paths.  IsMatch() does more work to
+	// return the same result, it's not worth switching.
 	matches, err := pm.Matches(filepath.ToSlash(rel)) //nolint:staticcheck
 	if err != nil {
 		return rel, false, fmt.Errorf("copier: error checking if %q is excluded: %w", rel, err)
@@ -1576,32 +1577,12 @@ func copierHandlerGet(bulkWriter io.Writer, req request, pm *fileutils.PatternMa
 					}
 					if skip {
 						if d.IsDir() {
-							// if there are no "include
-							// this anyway" patterns at
-							// all, we don't need to
-							// descend into this particular
-							// directory if it's a directory
-							if !pm.Exclusions() {
-								return filepath.SkipDir
+							// check if a negation pattern
+							// means we should descend into
+							// this excluded directory
+							if pm.ShouldDescendExcludedDir(skippedPath) {
+								return nil
 							}
-							// if there are exclusion
-							// patterns for which this
-							// path is a prefix, we
-							// need to keep descending
-							for _, pattern := range pm.Patterns() {
-								if !pattern.Exclusion() {
-									continue
-								}
-								spec := strings.Trim(pattern.String(), string(os.PathSeparator))
-								trimmedPath := strings.Trim(skippedPath, string(os.PathSeparator))
-								if strings.HasPrefix(spec+string(os.PathSeparator), trimmedPath) {
-									// we can't just skip over
-									// this directory
-									return nil
-								}
-							}
-							// there are exclusions, but
-							// none of them apply here
 							return filepath.SkipDir
 						}
 						// skip this item, but if we're

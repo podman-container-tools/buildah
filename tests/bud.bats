@@ -590,8 +590,12 @@ _EOF
 
 @test "bud with .dockerignore #1" {
   _prefetch alpine busybox
-  run_buildah 125 build -t testbud $WITH_POLICY_JSON -f $BUDFILES/dockerignore/Dockerfile $BUDFILES/dockerignore
-  expect_output --substring 'building.*"COPY subdir \./".*no such file or directory'
+  # https://github.com/containers/buildah/issues/6615
+  # "COPY subdir ./" copies subdir contents (sub1.txt) into root
+  run_buildah build -t testbud $WITH_POLICY_JSON -f $BUDFILES/dockerignore/Dockerfile $BUDFILES/dockerignore
+  run_buildah from --name myctr1 testbud
+  run_buildah run myctr1 ls -l sub1.txt
+  run_buildah rm myctr1
 
   run_buildah build -t testbud $WITH_POLICY_JSON -f $BUDFILES/dockerignore/Dockerfile.succeed $BUDFILES/dockerignore
 
@@ -605,7 +609,9 @@ _EOF
 
   run_buildah 1 run myctr ls -l sub2.txt
 
-  run_buildah 1 run myctr ls -l subdir/
+  # !*/sub1* un-excludes subdir/sub1.txt, nothing else
+  run_buildah run myctr find subdir -mindepth 1 -print
+  assert "$output" = "subdir/sub1.txt"
 }
 
 @test "bud --layers with --mount type bind should burst cache if symlink is changed" {
@@ -1014,8 +1020,12 @@ this is the output of test12"
 
 @test "bud with .containerignore" {
   _prefetch alpine busybox
-  run_buildah 125 build -t testbud $WITH_POLICY_JSON -f $BUDFILES/containerignore/Dockerfile $BUDFILES/containerignore
-  expect_output --substring 'building.*"COPY subdir \./".*no such file or directory'
+  # https://github.com/containers/buildah/issues/6615
+  # "COPY subdir ./" copies subdir contents (sub1.txt) into root
+  run_buildah build -t testbud $WITH_POLICY_JSON -f $BUDFILES/containerignore/Dockerfile $BUDFILES/containerignore
+  run_buildah from --name myctr1 testbud
+  run_buildah run myctr1 ls -l sub1.txt
+  run_buildah rm myctr1
 
   run_buildah build -t testbud $WITH_POLICY_JSON -f $BUDFILES/containerignore/Dockerfile.succeed $BUDFILES/containerignore
 
@@ -1029,7 +1039,9 @@ this is the output of test12"
 
   run_buildah 1 run myctr ls -l sub2.txt
 
-  run_buildah 1 run myctr ls -l subdir/
+  # !*/sub1* un-excludes subdir/sub1.txt, nothing else
+  run_buildah run myctr find subdir -mindepth 1 -print
+  assert "$output" = "subdir/sub1.txt"
 }
 
 @test "bud with .dockerignore - unmatched" {
@@ -1101,8 +1113,12 @@ symlink(subdir)"
 
 @test "bud with .dockerignore #6" {
   _prefetch alpine busybox
-  run_buildah 125 build -t testbud $WITH_POLICY_JSON -f $BUDFILES/dockerignore6/Dockerfile $BUDFILES/dockerignore6
-  expect_output --substring 'building.*"COPY subdir \./".*no such file or directory'
+  # https://github.com/containers/buildah/issues/6615
+  # "COPY subdir ./" copies subdir contents (sub1.txt) into root
+  run_buildah build -t testbud $WITH_POLICY_JSON -f $BUDFILES/dockerignore6/Dockerfile $BUDFILES/dockerignore6
+  run_buildah from --name myctr1 testbud
+  run_buildah run myctr1 ls -l sub1.txt
+  run_buildah rm myctr1
 
   run_buildah build -t testbud $WITH_POLICY_JSON -f $BUDFILES/dockerignore6/Dockerfile.succeed $BUDFILES/dockerignore6
 
@@ -1116,7 +1132,9 @@ symlink(subdir)"
 
   run_buildah 1 run myctr ls -l sub2.txt
 
-  run_buildah 1 run myctr ls -l subdir/
+  # !*/sub1* un-excludes subdir/sub1.txt, nothing else
+  run_buildah run myctr find subdir -mindepth 1 -print
+  assert "$output" = "subdir/sub1.txt"
 }
 
 @test "build with --platform without OS" {
@@ -4948,6 +4966,33 @@ _EOF
   assert "$output" !~ file2
 }
 
+# https://github.com/containers/buildah/issues/6615
+@test "bud copy with .dockerignore wildcard negation" {
+  _prefetch alpine
+  mytmpdir=${TEST_SCRATCH_DIR}/my-dir-wildcard
+  mkdir -p $mytmpdir/cmd
+  echo "package main" > $mytmpdir/cmd/main.go
+  echo "module test"  > $mytmpdir/go.mod
+  echo "# readme"     > $mytmpdir/README.md
+
+  cat > $mytmpdir/.dockerignore << _EOF
+**
+!go.mod
+!**/*.go
+_EOF
+
+  cat > $mytmpdir/Containerfile << _EOF
+FROM alpine
+COPY . /upload/
+RUN find /upload -type f
+_EOF
+
+  run_buildah build -t testbud $WITH_POLICY_JSON ${mytmpdir}
+  expect_output --substring "/upload/go.mod"
+  expect_output --substring "/upload/cmd/main.go"
+  assert "$output" !~ "README"
+}
+
 @test "bud-copy-workdir" {
   target=testimage
   run_buildah build $WITH_POLICY_JSON -t ${target} $BUDFILES/copy-workdir
@@ -5967,8 +6012,9 @@ EOF
   run_buildah 1 run myctr ls -l sub2.txt
   expect_output --substring "ls: sub2.txt: No such file or directory"
 
-  run_buildah 1 run myctr ls -l subdir/
-  expect_output --substring "ls: subdir/: No such file or directory"
+  # !*/sub1* un-excludes subdir/sub1.txt, nothing else
+  run_buildah run myctr find subdir -mindepth 1 -print
+  assert "$output" = "subdir/sub1.txt"
 }
 
 @test "bud with network options" {

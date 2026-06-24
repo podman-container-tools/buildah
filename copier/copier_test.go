@@ -1029,7 +1029,7 @@ func testGetMultiple(t *testing.T) {
 						"file-b",
 						"link-c",
 						"hlink-0",
-						// "subdir-a/file-c", // strings.HasPrefix("**/*-c", "subdir-a/") is false
+						"subdir-a/file-c",
 						"subdir-b/",
 						"subdir-b/file-n",
 						"subdir-b/file-o",
@@ -1155,8 +1155,8 @@ func testGetMultiple(t *testing.T) {
 					pattern: ".",
 					exclude: []string{"*", "!**/*-c"},
 					items: []string{
-						// "subdir-a/file-c", // strings.HasPrefix("**/*-c", "subdir-a/") is false
 						"link-c",
+						"subdir-a/file-c",
 						"subdir-c/",
 						"subdir-c/file-p",
 						"subdir-c/file-q",
