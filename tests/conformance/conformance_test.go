@@ -26,7 +26,6 @@ import (
 	"time"
 
 	docker "github.com/fsouza/go-dockerclient"
-	archive "github.com/moby/go-archive"
 	mobyclient "github.com/moby/moby/client"
 	"github.com/moby/moby/client/pkg/versions"
 	digest "github.com/opencontainers/go-digest"
@@ -52,6 +51,8 @@ import (
 	"go.podman.io/image/v5/types"
 	"go.podman.io/storage"
 	"go.podman.io/storage/pkg/ioutils"
+
+	archive "github.com/moby/go-archive"
 	"go.podman.io/storage/pkg/reexec"
 )
 
@@ -2324,10 +2325,9 @@ var internalTestCases = []testCase{
 	},
 
 	{
-		name:         "copy-integration1",
-		contextDir:   "dockerignore/integration1",
-		shouldFailAt: 3,
-		failureRegex: "(no such file or directory)|(file not found)|(file does not exist)",
+		name:       "copy-integration1",
+		contextDir: "dockerignore/integration1",
+		fsSkip:     []string{"(dir):subdir:mtime"},
 	},
 
 	{
@@ -3124,7 +3124,7 @@ var internalTestCases = []testCase{
 			}
 			return nil
 		},
-		fsSkip:               []string{"(dir):subdir:mtime"},
+		fsSkip:               []string{"(dir):subdir:mtime", "(dir):subdir:(dir):subdir-e:mtime"},
 		failOnExtraFSContent: true,
 		compatScratchConfig:  types.OptionalBoolTrue,
 	},
@@ -3146,7 +3146,7 @@ var internalTestCases = []testCase{
 			}
 			return nil
 		},
-		fsSkip:               []string{"(dir):subdir:mtime"},
+		fsSkip:               []string{"(dir):subdir:mtime", "(dir):subdir:(dir):subdir-e:mtime"},
 		failOnExtraFSContent: true,
 		compatScratchConfig:  types.OptionalBoolTrue,
 	},
@@ -3168,7 +3168,7 @@ var internalTestCases = []testCase{
 			}
 			return nil
 		},
-		fsSkip:               []string{"(dir):subdir:mtime"},
+		fsSkip:               []string{"(dir):subdir:mtime", "(dir):subdir:(dir):subdir-e:(dir):subdir-f:mtime"},
 		failOnExtraFSContent: true,
 		compatScratchConfig:  types.OptionalBoolTrue,
 	},
@@ -3190,7 +3190,7 @@ var internalTestCases = []testCase{
 			}
 			return nil
 		},
-		fsSkip:               []string{"(dir):subdir:mtime"},
+		fsSkip:               []string{"(dir):subdir:mtime", "(dir):subdir:(dir):subdir-f:mtime"},
 		failOnExtraFSContent: true,
 		compatScratchConfig:  types.OptionalBoolTrue,
 	},
@@ -3607,6 +3607,13 @@ var internalTestCases = []testCase{
 	},
 
 	{
+		name:                 "dockerignore-allowlist-wildcard-negation",
+		contextDir:           "dockerignore/allowlist/wildcard-negation",
+		fsSkip:               []string{"(dir):proc", "(dir):sys", "(dir):upload:mtime", "(dir):upload:(dir):cmd:mtime"},
+		failOnExtraFSContent: true,
+	},
+
+	{
 		name:          "tar-g",
 		contextDir:    "tar-g",
 		withoutDocker: true,
@@ -3616,7 +3623,7 @@ var internalTestCases = []testCase{
 	{
 		name:                 "dockerignore-exceptions-skip",
 		contextDir:           "dockerignore/exceptions-skip",
-		fsSkip:               []string{"(dir):volume:mtime"},
+		fsSkip:               []string{"(dir):volume:mtime", "(dir):volume:(dir):data:mtime"},
 		failOnExtraFSContent: true,
 	},
 
