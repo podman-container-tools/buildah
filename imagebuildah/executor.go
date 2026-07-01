@@ -169,6 +169,7 @@ type executor struct {
 	imageInfoLock                           sync.Mutex
 	imageInfoCache                          map[string]imageTypeAndHistoryAndDiffIDs
 	fromOverride                            string
+	fromOverrideApplied                     bool // true if --from replaced the first FROM (always stage 0)
 	additionalBuildContexts                 map[string]*additionalBuildContext
 	manifest                                string
 	secrets                                 map[string]define.Secret
@@ -968,6 +969,7 @@ func (b *executor) Build(ctx context.Context, stages imagebuilder.Stages) (image
 						if b.fromOverride != "" {
 							child.Next.Value = b.fromOverride
 							b.fromOverride = ""
+							b.fromOverrideApplied = true
 						}
 						base := child.Next.Value
 						if base != "" && base != buildah.BaseImageFakeName {
