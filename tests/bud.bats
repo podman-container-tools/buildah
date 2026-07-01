@@ -10752,3 +10752,45 @@ _EOF
     done
   done
 }
+
+@test "bud --from with absolute path to local transport" {
+  _prefetch busybox
+
+  local buildcontext=${TEST_SCRATCH_DIR}/buildcontext
+  mkdir -p ${buildcontext}
+
+  # Create a working container and get its image ID for comparison
+  run_buildah from -q $WITH_POLICY_JSON busybox
+  local cid=$output
+  run_buildah inspect --format '{{.FromImageID}}' "$cid"
+  local expected_id=$output
+
+  # Create images outside build context using all local transports
+  local imgdir=${TEST_SCRATCH_DIR}/images
+  mkdir -p ${imgdir}
+
+  run_buildah push $WITH_POLICY_JSON busybox oci-archive:${imgdir}/test.ociarchive
+  run_buildah push $WITH_POLICY_JSON busybox docker-archive:${imgdir}/test.dockerarchive
+  run_buildah push $WITH_POLICY_JSON busybox oci:${imgdir}/test-oci
+  run_buildah push $WITH_POLICY_JSON busybox dir:${imgdir}/test-dir
+
+  # Multi-stage Containerfile: --from should only override the first FROM.
+  # The second stage must still resolve "busybox" normally, proving that
+  # allowAbsolutePaths does not leak to later stages.
+  cat > ${buildcontext}/Containerfile << _EOF
+FROM placeholder-to-be-overridden AS stage0
+RUN echo stage0 > /stage.txt
+FROM busybox AS stage1
+COPY --from=stage0 /stage.txt /from-stage0.txt
+RUN cat /from-stage0.txt
+_EOF
+
+  for transport in \
+    "oci-archive:${imgdir}/test.ociarchive" \
+    "docker-archive:${imgdir}/test.dockerarchive" \
+    "oci:${imgdir}/test-oci" \
+    "dir:${imgdir}/test-dir" ; do
+    run_buildah build $WITH_POLICY_JSON --from "$transport" ${buildcontext}
+    expect_output --substring "FROM busybox AS stage1"
+  done
+}

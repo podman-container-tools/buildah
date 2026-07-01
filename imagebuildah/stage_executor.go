@@ -983,7 +983,7 @@ func (s *stageExecutor) UnrecognizedInstruction(step *imagebuilder.Step) error {
 // copy of the original image, under "tmpdir", which contains no symbolic
 // links, and return either the original image reference or a reference to a
 // sanitized copy which should be used instead.
-func (s *stageExecutor) sanitizeFrom(from, tmpdir string) (newFrom string, err error) {
+func (s *stageExecutor) sanitizeFrom(from, tmpdir string, allowAbsolutePaths bool) (newFrom string, err error) {
 	transportName, restOfImageName, maybeHasTransportName := strings.Cut(from, ":")
 	if !maybeHasTransportName || transports.Get(transportName) == nil {
 		if _, err = reference.ParseNormalizedNamed(from); err == nil {
@@ -997,7 +997,7 @@ func (s *stageExecutor) sanitizeFrom(from, tmpdir string) (newFrom string, err e
 		return "", fmt.Errorf("parsing image name %q: %w", from, err)
 	}
 	// TODO: drop this part and just return an error... someday
-	return sanitize.ImageName(s.executor.store, transportName, restOfImageName, s.executor.contextDir, tmpdir)
+	return sanitize.ImageName(s.executor.store, transportName, restOfImageName, s.executor.contextDir, tmpdir, allowAbsolutePaths)
 }
 
 // prepare creates a working container based on the specified image, or if one
@@ -1062,7 +1062,8 @@ func (s *stageExecutor) prepare(ctx context.Context, from string, initializeIBCo
 		}
 	}
 
-	sanitizedFrom, err := s.sanitizeFrom(from, tmpdir.GetTempDir())
+	allowAbsolutePaths := s.executor.fromOverrideStage == s.index
+	sanitizedFrom, err := s.sanitizeFrom(from, tmpdir.GetTempDir(), allowAbsolutePaths)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base image specification %q: %w", from, err)
 	}
