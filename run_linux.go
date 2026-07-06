@@ -3,6 +3,7 @@
 package buildah
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -1373,7 +1374,17 @@ func setupSpecialMountSpecChanges(spec *specs.Spec, shmSize string) ([]specs.Mou
 
 	isUserns := isNewUserns || isRootless
 
-	if isUserns && !isIpcns {
+	// Check /proc/filesystems to see if the kernel supports mqueue.
+	if !isMqueueSupported() {
+		// The default /dev/mqueue mount would fail with ENODEV, so drop it.
+		filtered := make([]specs.Mount, 0, len(mounts))
+		for _, m := range mounts {
+			if m.Destination != "/dev/mqueue" {
+				filtered = append(filtered, m)
+			}
+		}
+		mounts = filtered
+	} else if isUserns && !isIpcns {
 		devMqueue := "/dev/mqueue"
 		devMqueueMnt := specs.Mount{
 			Destination: devMqueue,
@@ -1428,6 +1439,27 @@ func setupSpecialMountSpecChanges(spec *specs.Spec, shmSize string) ([]specs.Mou
 
 	return mounts, nil
 }
+
+// isMqueueSupported reports whether the kernel supports the mqueue
+// filesystem, i.e. was built with CONFIG_POSIX_MQUEUE.
+var isMqueueSupported = sync.OnceValue(func() bool {
+	f, err := os.Open("/proc/filesystems")
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) > 0 && fields[len(fields)-1] == "mqueue" {
+			return true
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		logrus.Warnf("Failed to read /proc/filesystems: %v, assuming mqueue is not supported", err)
+	}
+	return false
+})
 
 func checkIDsGreaterThan5(ids []specs.LinuxIDMapping) bool {
 	for _, r := range ids {
