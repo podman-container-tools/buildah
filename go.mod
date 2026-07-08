@@ -36,8 +36,8 @@ require (
 	github.com/tonistiigi/dchapes-mode v0.0.0-20250318174251-73d941a28323
 	go.etcd.io/bbolt v1.5.0
 	go.podman.io/common v0.68.1-0.20260626180729-5af159b5000e
-	go.podman.io/image/v5 v5.40.1-0.20260626180729-5af159b5000e
-	go.podman.io/storage v1.63.1-0.20260626180729-5af159b5000e
+	go.podman.io/image/v5 v5.40.1-0.20260708163251-9ba4d114a7dc
+	go.podman.io/storage v1.63.1-0.20260708163251-9ba4d114a7dc
 	golang.org/x/crypto v0.53.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/sys v0.47.0
@@ -85,7 +85,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jinzhu/copier v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.6 // indirect
+	github.com/klauspost/compress v1.19.0 // indirect
 	github.com/klauspost/pgzip v1.2.6 // indirect
 	github.com/manifoldco/promptui v0.9.0 // indirect
 	github.com/mattn/go-runewidth v0.0.24 // indirect
