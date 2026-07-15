@@ -192,6 +192,7 @@ func CWConvertImage(ctx context.Context, systemContext *types.SystemContext, sto
 	// is in the .krun_config.json file in the encrypted filesystem.
 	logger.Log(logrus.DebugLevel, "committing disk image")
 	target.ClearAnnotations()
+	target.ClearLayerAnnotations()
 	target.ClearEnv()
 	target.ClearLabels()
 	target.ClearOnBuild()

@@ -552,6 +552,14 @@ Use cases which set this flag to *false* may need to do the same for the
 
 Inherit the labels from the base image or base stages. (default true).
 
+**--inherit-layer-annotations** *bool-value*
+
+Inherit the per-layer annotations from the base image or base stages
+(default true).
+Per-layer annotations are only supported in the OCI image format.
+They cannot be preserved when the content of a layer changes, for example
+when layers are squashed into one with **--squash** or **--cw**.
+
 **--ipc** *how*
 
 Sets the configuration for IPC namespaces when handling `RUN` instructions.
