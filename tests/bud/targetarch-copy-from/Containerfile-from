@@ -1,0 +1,9 @@
+FROM alpine AS artifacts-amd64
+RUN echo "amd64" > /arch
+
+FROM alpine AS artifacts-arm64
+RUN echo "arm64" > /arch
+
+FROM artifacts-${TARGETARCH} AS artifacts
+ARG TARGETARCH
+RUN echo "Hello $(cat /arch): ${TARGETARCH}"

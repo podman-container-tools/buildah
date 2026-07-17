@@ -174,6 +174,8 @@ func add(b *Builder, args []string, attributes map[string]bool, flagArgs []strin
 		}
 	}
 	userArgs := mergeEnv(envMapAsSlice(filteredUserArgs), b.Env)
+	userArgs = mergeEnv(envMapAsSlice(b.BuiltinArgDefaults), userArgs)
+	userArgs = mergeEnv(envMapAsSlice(b.HeadingArgs), userArgs)
 	for _, a := range flagArgs {
 		arg, err := ProcessWord(a, userArgs)
 		if err != nil {
@@ -255,6 +257,8 @@ func dispatchCopy(b *Builder, args []string, attributes map[string]bool, flagArg
 		}
 	}
 	userArgs := mergeEnv(envMapAsSlice(filteredUserArgs), b.Env)
+	userArgs = mergeEnv(envMapAsSlice(b.BuiltinArgDefaults), userArgs)
+	userArgs = mergeEnv(envMapAsSlice(b.HeadingArgs), userArgs)
 	for _, a := range flagArgs {
 		arg, err := ProcessWord(a, userArgs)
 		if err != nil {
@@ -456,6 +460,8 @@ func run(b *Builder, args []string, attributes map[string]bool, flagArgs []strin
 		}
 	}
 	userArgs := mergeEnv(envMapAsSlice(filteredUserArgs), b.Env)
+	userArgs = mergeEnv(envMapAsSlice(b.BuiltinArgDefaults), userArgs)
+	userArgs = mergeEnv(envMapAsSlice(b.HeadingArgs), userArgs)
 	for _, a := range flagArgs {
 		arg, err := ProcessWord(a, userArgs)
 		if err != nil {
