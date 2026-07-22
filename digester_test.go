@@ -123,9 +123,9 @@ func TestCompositeDigester(t *testing.T) {
 						}
 						if filtered {
 							// wrap the WriteCloser in another WriteCloser
-							hasher = newTarFilterer(hasher, func(hdr *tar.Header) (bool, bool, io.Reader) {
+							hasher = newTarFilterer(hasher, func(hdr *tar.Header) (tarFilterAction, bool, io.Reader) {
 								hdr.ModTime = zero
-								return false, false, nil
+								return tarFilterKeep, false, nil
 							})
 							require.NotNil(t, hasher, "newTarFilterer returned a null WriteCloser?")
 						}
@@ -192,7 +192,7 @@ func TestTarFilterer(t *testing.T) {
 		name          string
 		input, output map[string]string
 		breakAfter    int
-		filter        func(*tar.Header) (bool, bool, io.Reader)
+		filter        func(*tar.Header) (tarFilterAction, bool, io.Reader)
 	}{
 		{
 			name: "none",
@@ -216,7 +216,7 @@ func TestTarFilterer(t *testing.T) {
 				"file a": "content a",
 				"file b": "content b",
 			},
-			filter: func(*tar.Header) (bool, bool, io.Reader) { return false, false, nil },
+			filter: func(*tar.Header) (tarFilterAction, bool, io.Reader) { return tarFilterKeep, false, nil },
 		},
 		{
 			name: "skip",
@@ -227,7 +227,15 @@ func TestTarFilterer(t *testing.T) {
 			output: map[string]string{
 				"file a": "content a",
 			},
-			filter: func(hdr *tar.Header) (bool, bool, io.Reader) { return hdr.Name == "file b", false, nil },
+			filter: func(hdr *tar.Header) (tarFilterAction, bool, io.Reader) {
+				var action tarFilterAction
+				if hdr.Name == "file b" {
+					action = tarFilterSkip
+				} else {
+					action = tarFilterKeep
+				}
+				return action, false, nil
+			},
 		},
 		{
 			name: "replace",
@@ -242,13 +250,13 @@ func TestTarFilterer(t *testing.T) {
 				"file c": "content c",
 			},
 			breakAfter: 2,
-			filter: func(hdr *tar.Header) (bool, bool, io.Reader) {
+			filter: func(hdr *tar.Header) (tarFilterAction, bool, io.Reader) {
 				if hdr.Name == "file b" {
 					content := "content b+c"
 					hdr.Size = int64(len(content))
-					return false, true, strings.NewReader(content)
+					return tarFilterKeep, true, strings.NewReader(content)
 				}
-				return false, false, nil
+				return tarFilterKeep, false, nil
 			},
 		},
 	}

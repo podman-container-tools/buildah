@@ -9392,6 +9392,32 @@ _EOF
   diff -u ${TEST_SCRATCH_DIR}/squashed-layered-image-rootfs.txt ${TEST_SCRATCH_DIR}/squashed-not-layered-image-rootfs.txt
 }
 
+# https://github.com/podman-container-tools/buildah/issues/6747
+@test "bud --layers should preserve parent directory attributes with RUN --mount" {
+  case "${STORAGE_DRIVER}" in
+    overlay) ;;
+    *) skip "bug only reproduces with overlay, not ${STORAGE_DRIVER}" ;;
+  esac
+
+  _prefetch ubuntu
+  local contextdir=${TEST_SCRATCH_DIR}/context
+  mkdir -p ${contextdir}
+
+  cat > ${contextdir}/Containerfile << '_EOF'
+FROM ubuntu
+RUN mkdir -p /home/testuser && chmod 753 /home/testuser && chown 1234:5678 /home/testuser
+USER 1234
+WORKDIR /home/testuser
+RUN mkdir -p somedir
+RUN --mount=type=cache,target=.cache touch somedir
+RUN test "$(stat -c '%a' .)" = "753"
+RUN test "$(stat -c '%u:%g' .)" = "1234:5678"
+RUN test "$(stat -c '%Y' .)" = "3456"
+_EOF
+
+  SOURCE_DATE_EPOCH=3456 run_buildah build --no-cache --layers --rewrite-timestamp -t test-mount-ownership ${contextdir}
+}
+
 @test "bud COPY one file to ..../. creates the destination directory" {
   _prefetch busybox
   local contextdir=${TEST_SCRATCH_DIR}/context

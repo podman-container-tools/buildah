@@ -879,6 +879,8 @@ func (i *containerImageRef) filterExclusionsByImage(ctx context.Context, exclusi
 				if exclusion.Owner != nil && (int64(exclusion.Owner.UID) != stat.UID && int64(exclusion.Owner.GID) != stat.GID) {
 					continue
 				}
+				exclusion.Mode = &stat.Mode
+				exclusion.Owner = &idtools.IDPair{UID: int(stat.UID), GID: int(stat.GID)}
 				paths = append(paths, exclusion)
 			}
 		}
@@ -1051,6 +1053,7 @@ func (i *containerImageRef) NewImageSource(ctx context.Context, _ *types.SystemC
 		var rc io.ReadCloser
 		var errChan chan error
 		var layerExclusions []copier.ConditionalRemovePath
+		var layerPullUps []copier.EnsureParentPath
 		if i.confidentialWorkload.Convert {
 			// Convert the root filesystem into an encrypted disk image.
 			rc, err = i.extractConfidentialWorkloadFS(i.confidentialWorkload)
@@ -1086,14 +1089,13 @@ func (i *containerImageRef) NewImageSource(ctx context.Context, _ *types.SystemC
 				if layerID == i.layerID {
 					// We need to filter out any mount targets that we created.
 					layerExclusions = append(slices.Clone(i.layerExclusions), i.layerMountTargets...)
-					// And we _might_ need to filter out directories that modified
-					// by creating and removing mount targets, _if_ they were the
-					// same in the base image for this stage.
-					layerPullUps, err := i.filterExclusionsByImage(ctx, i.layerPullUps, i.fromImageID)
+					// Parent directories that were modified by creating and
+					// removing mount targets should have their ownership
+					// and mode corrected rather than being excluded.
+					layerPullUps, err = i.filterExclusionsByImage(ctx, i.layerPullUps, i.fromImageID)
 					if err != nil {
 						return nil, fmt.Errorf("checking which exclusions are in base image %q: %w", i.fromImageID, err)
 					}
-					layerExclusions = append(layerExclusions, layerPullUps...)
 				}
 				// Extract this layer, one of possibly many.
 				rc, err = i.store.Diff("", layerID, diffOptions)
@@ -1137,7 +1139,7 @@ func (i *containerImageRef) NewImageSource(ctx context.Context, _ *types.SystemC
 		// Use specified timestamps in the layer, if we're doing that for history
 		// entries.
 		nestedWriteCloser := ioutils.NewWriteCloserWrapper(writer, writeCloser.Close)
-		writeCloser, err = makeFilteredLayerWriteCloser(nestedWriteCloser, i.layerModTime, i.layerLatestModTime, layerExclusions, i.os == "windows")
+		writeCloser, err = makeFilteredLayerWriteCloser(nestedWriteCloser, i.layerModTime, i.layerLatestModTime, layerExclusions, layerPullUps, i.os == "windows")
 		if err != nil {
 			return nil, fmt.Errorf("creating filter write closer %s: %w", what, err)
 		}
@@ -1422,8 +1424,8 @@ func (i *containerImageRef) makeExtraImageContentDiff(includeFooter bool, timest
 // no later than layerLatestModTime (if a value is provided for it).
 // This implies that if both values are provided, the archive's timestamps will
 // be set to the earlier of the two values.
-func makeFilteredLayerWriteCloser(wc io.WriteCloser, layerModTime, layerLatestModTime *time.Time, exclusions []copier.ConditionalRemovePath, windows bool) (io.WriteCloser, error) {
-	if layerModTime == nil && layerLatestModTime == nil && len(exclusions) == 0 && !windows {
+func makeFilteredLayerWriteCloser(wc io.WriteCloser, layerModTime, layerLatestModTime *time.Time, exclusions []copier.ConditionalRemovePath, pullUps []copier.EnsureParentPath, windows bool) (io.WriteCloser, error) {
+	if layerModTime == nil && layerLatestModTime == nil && len(exclusions) == 0 && len(pullUps) == 0 && !windows {
 		return wc, nil
 	}
 	exclusionsMap := make(map[string]copier.ConditionalRemovePath)
@@ -1434,10 +1436,19 @@ func makeFilteredLayerWriteCloser(wc io.WriteCloser, layerModTime, layerLatestMo
 		}
 		exclusionsMap[pathSpec] = exclusionSpec
 	}
+	pullUpsMap := make(map[string]copier.EnsureParentPath)
+	for _, pullUpSpec := range pullUps {
+		pathSpec := strings.Trim(path.Clean(pullUpSpec.Path), "/")
+		if pathSpec == "" {
+			continue
+		}
+		pullUpsMap[pathSpec] = pullUpSpec
+	}
 	var initialized bool
-	wc = newTarFilterer(wc, func(hdr *tar.Header) (skip, replaceContents bool, replacementContents io.Reader) {
+	wc = newTarFilterer(wc, func(hdr *tar.Header) (action tarFilterAction, replaceContents bool, replacementContents io.Reader) {
+		action = tarFilterKeep
 		modTime := hdr.ModTime
-		if layerModTime != nil || layerLatestModTime != nil || len(exclusions) != 0 {
+		if layerModTime != nil || layerLatestModTime != nil || len(exclusions) != 0 || len(pullUps) != 0 {
 			// Changing a zeroed field to a non-zero field can affect the
 			// format that the library uses for writing the header, so only
 			// change fields that are already set to avoid changing the
@@ -1448,8 +1459,23 @@ func makeFilteredLayerWriteCloser(wc io.WriteCloser, layerModTime, layerLatestMo
 				if (conditions.ModTime == nil || conditions.ModTime.Equal(modTime)) &&
 					(conditions.Owner == nil || (conditions.Owner.UID == hdr.Uid && conditions.Owner.GID == hdr.Gid)) &&
 					(conditions.Mode == nil || (*conditions.Mode&os.ModePerm == os.FileMode(hdr.Mode)&os.ModePerm)) {
-					return true, false, nil
+					return tarFilterSkip, false, nil
 				}
+			}
+			// Correct the ownership and mode of pulled-up parent
+			// directories, but defer writing them until a child
+			// entry passes through the filter.
+			if pullUpSpec, ok := pullUpsMap[nameSpec]; ok {
+				if pullUpSpec.Owner != nil {
+					hdr.Uid = pullUpSpec.Owner.UID
+					hdr.Gid = pullUpSpec.Owner.GID
+				}
+				if pullUpSpec.Mode != nil {
+					hdr.Mode = int64(*pullUpSpec.Mode & os.ModePerm)
+				}
+				// Fall through so timestamp/Windows transforms apply
+				// before the deferred header is copied for later emit.
+				action = tarFilterDefer
 			}
 		}
 		if layerModTime != nil {
@@ -1499,7 +1525,7 @@ func makeFilteredLayerWriteCloser(wc io.WriteCloser, layerModTime, layerLatestMo
 				hdr.PAXRecords[keyCreationTime] = fmt.Sprintf("%d.%09d", hdr.ModTime.Unix(), hdr.ModTime.Nanosecond())
 			}
 		}
-		return false, false, nil
+		return action, false, nil
 	})
 	if windows {
 		// prep the archive by writing the Files/ and Hives/ directories to the writer.
@@ -1588,7 +1614,7 @@ func (b *Builder) makeLinkedLayerInfos(layers []LinkedLayer, layerType string, l
 
 			digester := digest.Canonical.Digester()
 			sizeCountedFile := ioutils.NewWriteCounter(io.MultiWriter(digester.Hash(), f))
-			wc, err := makeFilteredLayerWriteCloser(ioutils.NopWriteCloser(sizeCountedFile), layerModTime, layerLatestModTime, nil, false)
+			wc, err := makeFilteredLayerWriteCloser(ioutils.NopWriteCloser(sizeCountedFile), layerModTime, layerLatestModTime, nil, nil, false)
 			if err != nil {
 				return err
 			}
