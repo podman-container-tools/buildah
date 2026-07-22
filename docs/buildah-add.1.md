@@ -62,7 +62,7 @@ by symbolic links outside of the chroot will fail.
 
 **--exclude** *pattern*
 
-Exclude copying files matching the specified pattern. Option can be specified
+Exclude copying files matching the specified pattern. The option can be specified
 multiple times. Patterns are matched against each file's path relative to the
 context directory (or, with **--from**, relative to the source container or image root).
 See containerignore(5) for supported formats.
@@ -77,6 +77,13 @@ can be used.
 **--ignorefile** *file*
 
 Path to an alternative .containerignore (.dockerignore) file. Requires \-\-contextdir be specified.
+
+**--include** *pattern*
+
+Only copy files matching the specified pattern. The option can be specified multiple times.
+Patterns are matched against each file's path relative to the context directory being copied.
+If a path matches both an **--include** and an **--exclude** pattern, it will be excluded.
+See containerignore(5) for supported formats.
 
 **--link**
 
