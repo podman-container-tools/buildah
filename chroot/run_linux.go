@@ -75,7 +75,7 @@ var (
 		unix.MS_SYNCHRONOUS:  "MS_SYNCHRONOUS",
 		unix.MS_UNBINDABLE:   "MS_UNBINDABLE",
 	}
-	statFlagMap = map[int]string{
+	statFlagMap = map[uintptr]string{
 		unix.ST_MANDLOCK:    "ST_MANDLOCK",
 		unix.ST_NOATIME:     "ST_NOATIME",
 		unix.ST_NODEV:       "ST_NODEV",
@@ -107,9 +107,9 @@ func statFlagNames(flags uintptr) []string {
 	var names []string
 	flags = flags & ^uintptr(0x20) // mask off ST_VALID
 	for flag, name := range statFlagMap {
-		if int(flags)&flag == flag {
+		if flags&flag == flag {
 			names = append(names, name)
-			flags = flags &^ (uintptr(flag))
+			flags = flags &^ flag
 		}
 	}
 	if flags != 0 { // got some unknown leftovers

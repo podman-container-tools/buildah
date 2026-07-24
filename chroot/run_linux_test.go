@@ -9,14 +9,14 @@ import (
 
 func TestStatFlagNames(t *testing.T) {
 	var names []string
-	var flags int
+	var flags uintptr
 	for flag := range statFlagMap {
 		flags |= flag
 		names = append(names, statFlagMap[flag])
-		assert.Equal(t, []string{statFlagMap[flag]}, statFlagNames(uintptr(flag)))
+		assert.Equal(t, []string{statFlagMap[flag]}, statFlagNames(flag))
 	}
 	slices.Sort(names)
-	assert.Equal(t, names, statFlagNames(uintptr(flags)))
+	assert.Equal(t, names, statFlagNames(flags))
 }
 
 func TestMountFlagNames(t *testing.T) {
