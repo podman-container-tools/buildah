@@ -159,7 +159,7 @@ github.com/docker/distribution/registry/api/v2
 ## explicit; go 1.21
 github.com/docker/docker-credential-helpers/client
 github.com/docker/docker-credential-helpers/credentials
-# github.com/docker/go-connections v0.7.0
+# github.com/docker/go-connections v0.8.1
 ## explicit; go 1.23
 github.com/docker/go-connections/sockets
 github.com/docker/go-connections/tlsconfig
@@ -220,7 +220,7 @@ github.com/jinzhu/copier
 # github.com/json-iterator/go v1.1.12
 ## explicit; go 1.12
 github.com/json-iterator/go
-# github.com/klauspost/compress v1.19.0
+# github.com/klauspost/compress v1.19.1
 ## explicit; go 1.24
 github.com/klauspost/compress
 github.com/klauspost/compress/flate
@@ -239,13 +239,13 @@ github.com/klauspost/pgzip
 github.com/manifoldco/promptui
 github.com/manifoldco/promptui/list
 github.com/manifoldco/promptui/screenbuf
-# github.com/mattn/go-runewidth v0.0.24
-## explicit; go 1.20
+# github.com/mattn/go-runewidth v0.0.27
+## explicit; go 1.23
 github.com/mattn/go-runewidth
 # github.com/mattn/go-shellwords v1.0.14
 ## explicit; go 1.13
 github.com/mattn/go-shellwords
-# github.com/mattn/go-sqlite3 v1.14.47
+# github.com/mattn/go-sqlite3 v1.14.48
 ## explicit; go 1.21
 github.com/mattn/go-sqlite3
 # github.com/miekg/pkcs11 v1.1.2
@@ -288,7 +288,7 @@ github.com/moby/moby/api/types/storage
 github.com/moby/moby/api/types/swarm
 github.com/moby/moby/api/types/system
 github.com/moby/moby/api/types/volume
-# github.com/moby/moby/client v0.5.0
+# github.com/moby/moby/client v0.5.1
 ## explicit; go 1.24
 github.com/moby/moby/client
 github.com/moby/moby/client/internal
@@ -429,8 +429,8 @@ github.com/tchap/go-patricia/v2/patricia
 # github.com/tonistiigi/dchapes-mode v0.0.0-20250318174251-73d941a28323
 ## explicit; go 1.21
 github.com/tonistiigi/dchapes-mode
-# github.com/ulikunitz/xz v0.5.15
-## explicit; go 1.12
+# github.com/ulikunitz/xz v0.5.16
+## explicit; go 1.20
 github.com/ulikunitz/xz
 github.com/ulikunitz/xz/internal/hash
 github.com/ulikunitz/xz/internal/xlog
@@ -440,10 +440,12 @@ github.com/ulikunitz/xz/lzma
 github.com/vbatts/tar-split/archive/tar
 github.com/vbatts/tar-split/tar/asm
 github.com/vbatts/tar-split/tar/storage
-# github.com/vbauerster/mpb/v8 v8.12.1
+# github.com/vbauerster/cupwriter v0.0.4
+## explicit; go 1.25.0
+github.com/vbauerster/cupwriter
+# github.com/vbauerster/mpb/v8 v8.14.0
 ## explicit; go 1.25.0
 github.com/vbauerster/mpb/v8
-github.com/vbauerster/mpb/v8/cwriter
 github.com/vbauerster/mpb/v8/decor
 github.com/vbauerster/mpb/v8/internal
 # github.com/vishvananda/netlink v1.3.1
@@ -497,7 +499,7 @@ go.opentelemetry.io/otel/trace
 go.opentelemetry.io/otel/trace/embedded
 go.opentelemetry.io/otel/trace/internal/telemetry
 go.opentelemetry.io/otel/trace/noop
-# go.podman.io/common v0.68.2-0.20260710152621-629dae593a5b
+# go.podman.io/common v0.68.2-0.20260710152621-629dae593a5b => github.com/lsm5/container-libs/common v0.0.0-20260728155805-0ad8ddb2b70a
 ## explicit; go 1.25.7
 go.podman.io/common/internal
 go.podman.io/common/libimage
@@ -512,7 +514,6 @@ go.podman.io/common/libnetwork/netavark
 go.podman.io/common/libnetwork/network
 go.podman.io/common/libnetwork/pasta
 go.podman.io/common/libnetwork/resolvconf
-go.podman.io/common/libnetwork/slirp4netns
 go.podman.io/common/libnetwork/types
 go.podman.io/common/libnetwork/util
 go.podman.io/common/pkg/apparmor
@@ -536,9 +537,7 @@ go.podman.io/common/pkg/netns
 go.podman.io/common/pkg/parse
 go.podman.io/common/pkg/password
 go.podman.io/common/pkg/retry
-go.podman.io/common/pkg/rootlessport
 go.podman.io/common/pkg/seccomp
-go.podman.io/common/pkg/servicereaper
 go.podman.io/common/pkg/signal
 go.podman.io/common/pkg/subscriptions
 go.podman.io/common/pkg/supplemented
@@ -671,7 +670,7 @@ go.podman.io/storage/types
 # go.yaml.in/yaml/v2 v2.4.4
 ## explicit; go 1.15
 go.yaml.in/yaml/v2
-# go.yaml.in/yaml/v3 v3.0.4
+# go.yaml.in/yaml/v3 v3.0.5
 ## explicit; go 1.16
 go.yaml.in/yaml/v3
 # golang.org/x/crypto v0.54.0
@@ -871,3 +870,4 @@ tags.cncf.io/container-device-interface/pkg/parser
 # tags.cncf.io/container-device-interface/specs-go v1.1.0
 ## explicit; go 1.19
 tags.cncf.io/container-device-interface/specs-go
+# go.podman.io/common => github.com/lsm5/container-libs/common v0.0.0-20260728155805-0ad8ddb2b70a

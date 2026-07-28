@@ -1,6 +1,6 @@
-//go:build aix || linux
+//go:build zos
 
-package cwriter
+package cupwriter
 
 import "golang.org/x/sys/unix"
 

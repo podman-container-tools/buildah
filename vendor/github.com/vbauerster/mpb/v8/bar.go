@@ -16,6 +16,8 @@ import (
 
 // Bar represents a progress bar.
 type Bar struct {
+	ctx          context.Context
+	cancel       func()
 	index        int // used by heap
 	priority     int // used by heap
 	frameCh      chan *renderFrame
@@ -23,8 +25,6 @@ type Bar struct {
 	container    *Progress
 	bs           *bState
 	bsOk         chan struct{}
-	ctx          context.Context
-	cancel       func()
 }
 
 type decorSyncTable [2][]*decor.Sync
@@ -44,14 +44,12 @@ type bState struct {
 	ewmaDecorators  []decor.EwmaDecorator
 	filler          BarFiller
 	extender        extenderFunc
-	renderReq       chan<- time.Time
-	waitBar         *Bar // key for (*pState).queueBars
+	waitFor         *Bar // key for (*pState).queueBars
 	trimSpace       bool
 	aborted         bool
 	triggerComplete bool
 	rmOnComplete    bool
 	noPop           bool
-	autoRefresh     bool
 }
 
 type renderFrame struct {
@@ -171,7 +169,7 @@ func (b *Bar) EnableTriggerComplete() {
 		s.triggerComplete = true
 		if s.current >= s.total {
 			s.current = s.total
-			b.done(s.renderReq, s.autoRefresh)
+			b.done()
 		}
 	}:
 	case <-b.ctx.Done():
@@ -197,7 +195,7 @@ func (b *Bar) SetTotal(total int64, complete bool) {
 		if complete {
 			s.current = s.total
 			s.triggerComplete = true
-			b.done(s.renderReq, s.autoRefresh)
+			b.done()
 		}
 	}:
 	case <-b.ctx.Done():
@@ -214,7 +212,7 @@ func (b *Bar) SetCurrent(current int64) {
 		s.current = current
 		if s.triggerComplete && s.current >= s.total {
 			s.current = s.total
-			b.done(s.renderReq, s.autoRefresh)
+			b.done()
 		}
 	}:
 	case <-b.ctx.Done():
@@ -238,7 +236,7 @@ func (b *Bar) IncrInt64(n int64) {
 		s.current += n
 		if s.triggerComplete && s.current >= s.total {
 			s.current = s.total
-			b.done(s.renderReq, s.autoRefresh)
+			b.done()
 		}
 	}:
 	case <-b.ctx.Done():
@@ -266,7 +264,7 @@ func (b *Bar) EwmaIncrInt64(n int64, iterDur time.Duration) {
 		s.current += n
 		if s.triggerComplete && s.current >= s.total {
 			s.current = s.total
-			b.done(s.renderReq, s.autoRefresh)
+			b.done()
 		}
 	}:
 	case <-b.ctx.Done():
@@ -288,7 +286,7 @@ func (b *Bar) EwmaSetCurrent(current int64, iterDur time.Duration) {
 		s.current = current
 		if s.triggerComplete && s.current >= s.total {
 			s.current = s.total
-			b.done(s.renderReq, s.autoRefresh)
+			b.done()
 		}
 	}:
 	case <-b.ctx.Done():
@@ -325,7 +323,7 @@ func (b *Bar) Abort(drop bool) {
 		s.aborted = true
 		s.rmOnComplete = drop
 		s.triggerComplete = true
-		b.done(s.renderReq, s.autoRefresh)
+		b.done()
 	}:
 	case <-b.ctx.Done():
 	}
@@ -503,33 +501,34 @@ func (s *bState) wSyncTable() (table decorSyncTable) {
 	return table
 }
 
-func (b *Bar) done(renderReq chan<- time.Time, autoRefresh bool) {
-	if autoRefresh {
+func (b *Bar) done() {
+	if b.container.refreshEnabled {
 		// Technically this call isn't required, but if refresh rate is set to
 		// one hour for example and bar completes within a few minutes p.Wait()
 		// will wait for one hour. This call helps to avoid unnecessary waiting.
-		go b.tryEarlyRefresh(renderReq)
+		go b.tryEarlyRefresh()
 	} else {
 		b.cancel()
+		go b.container.runQueuetBar(b)
 	}
 }
 
-func (b *Bar) tryEarlyRefresh(renderReq chan<- time.Time) {
+func (b *Bar) tryEarlyRefresh() {
 	otherRunning := make(chan struct{})
-	ok := b.container.iterateBars(func(bar *Bar) bool {
+	yield := func(bar *Bar) bool {
 		if b != bar && bar.isRunning() {
 			close(otherRunning)
 			return false // stop traverse
 		}
 		return true // continue traverse
-	})
-	if ok {
+	}
+	if err := b.container.iterateBars(yield); err == nil {
 		select {
 		case <-otherRunning:
 		default:
 			for {
 				select {
-				case renderReq <- time.Now():
+				case b.container.renderReq <- time.Now():
 				case <-b.ctx.Done():
 					return
 				}
