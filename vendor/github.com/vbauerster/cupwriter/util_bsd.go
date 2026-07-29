@@ -1,6 +1,6 @@
 //go:build darwin || dragonfly || freebsd || netbsd || openbsd
 
-package cwriter
+package cupwriter
 
 import "golang.org/x/sys/unix"
 
