@@ -61,6 +61,11 @@ then TLS verification will be used. If set to false, then TLS verification will 
 TLS verification will be used unless the target registry is listed as an insecure registry in registries.conf.
 TLS verification cannot be used when talking to an insecure registry.
 
+This is a boolean flag. Use the `=` form when passing a value (for example
+`--tls-verify=false`). A bare `--tls-verify` is treated as true; a space-separated
+form such as `--tls-verify false` is not accepted (the word after the flag is
+parsed as a registry name).
+
 **--username**, **-u**
 
 Username for registry
