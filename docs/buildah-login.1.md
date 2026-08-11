@@ -56,15 +56,14 @@ Take the password from stdin
 
 **--tls-verify**
 
-Require HTTPS and verification of certificates when talking to container registries (default: true). If explicitly set to true,
-then TLS verification will be used. If set to false, then TLS verification will not be used. If not specified,
-TLS verification will be used unless the target registry is listed as an insecure registry in registries.conf.
-TLS verification cannot be used when talking to an insecure registry.
-
-This is a boolean flag. Use the `=` form when passing a value (for example
-`--tls-verify=false`). A bare `--tls-verify` is treated as true; a space-separated
-form such as `--tls-verify false` is not accepted (the word after the flag is
-parsed as a registry name).
+Require HTTPS and certificate verification when talking to container registries
+(default: true). As this is a boolean value, use the `=` form when passing a
+value, for example `--tls-verify=false`. A bare `--tls-verify` is treated as
+true; a space-separated form such as `--tls-verify false` is not accepted (the
+word after the flag is parsed as a registry name). If not specified, TLS
+verification is used unless the target registry is listed as an insecure
+registry in registries.conf. TLS verification cannot be used when talking to an
+insecure registry.
 
 **--username**, **-u**
 
