@@ -63,14 +63,14 @@ func Volume(volume string) (specs.Mount, error) {
 	if err := parse.ValidateVolumeCtrDir(arr[1]); err != nil {
 		return mount, err
 	}
-	mountOptions := ""
+	var mountOpts []string
 	if len(arr) > 2 {
-		mountOptions = arr[2]
-		if _, err := parse.ValidateVolumeOpts(strings.Split(arr[2], ",")); err != nil {
+		opts, err := parse.ValidateVolumeOpts(strings.Split(arr[2], ","))
+		if err != nil {
 			return mount, err
 		}
+		mountOpts = opts
 	}
-	mountOpts := strings.Split(mountOptions, ",")
 	mount.Source = arr[0]
 	mount.Destination = arr[1]
 	mount.Type = "rbind"
