@@ -33,7 +33,7 @@ func SplitStringWithColonEscape(str string) []string {
 	for idx, r := range str {
 		if r == ':' {
 			// the colon is backslash-escaped
-			if idx-1 > 0 && str[idx-1] == '\\' {
+			if idx > 0 && str[idx-1] == '\\' {
 				sb.WriteRune(r)
 			} else {
 				// os.Stat will fail if path contains escaped colon
