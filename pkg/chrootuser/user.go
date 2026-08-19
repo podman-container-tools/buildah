@@ -12,9 +12,11 @@ import (
 // exist in /etc/passwd
 var ErrNoSuchUser = errors.New("user does not exist in /etc/passwd")
 
-// GetUser will return the uid, gid of the user specified in the userspec
-// it will use the /etc/passwd and /etc/group files inside of the rootdir
-// to return this information.
+// GetUser will return the UID, primary GID, and home directory of the user
+// specified in the userspec.
+// It will use the /etc/passwd and /etc/group files under rootdir to return
+// this information.
+//
 // userspec format [user | user:group | uid | uid:gid | user:gid | uid:group ]
 func GetUser(rootdir, userspec string) (uint32, uint32, string, error) {
 	var gid64 uint64
@@ -82,7 +84,9 @@ func GetUser(rootdir, userspec string) (uint32, uint32, string, error) {
 	return 0, 0, homedir, err
 }
 
-// GetGroup returns the gid by looking it up in the /etc/group file
+// GetGroup returns the group's ID by looking it up in the /etc/group file
+// under rootdir.
+//
 // groupspec format [ group | gid ]
 func GetGroup(rootdir, groupspec string) (uint32, error) {
 	gid64, gerr := strconv.ParseUint(groupspec, 10, 32)
@@ -97,7 +101,8 @@ func GetGroup(rootdir, groupspec string) (uint32, error) {
 	return uint32(gid64), nil
 }
 
-// GetAdditionalGroupsForUser returns a list of gids that userid is associated with
+// GetAdditionalGroupsForUser returns a list of IDs of groups for which the
+// user whose name corresponds to userid is a member.
 func GetAdditionalGroupsForUser(rootdir string, userid uint64) ([]uint32, error) {
 	gids, err := lookupAdditionalGroupsForUIDInContainer(rootdir, userid)
 	if err != nil {
@@ -106,8 +111,8 @@ func GetAdditionalGroupsForUser(rootdir string, userid uint64) ([]uint32, error)
 	return gids, nil
 }
 
-// LookupUIDInContainer returns username and gid associated with a UID in a container
-// it will use the /etc/passwd files inside of the rootdir
+// LookupUIDInContainer returns the name and primary GID associated with the
+// UID in a container.  It will use the /etc/passwd files inside of the rootdir
 // to return this information.
 func LookupUIDInContainer(rootdir string, uid uint64) (user string, gid uint64, err error) {
 	return lookupUIDInContainer(rootdir, uid)

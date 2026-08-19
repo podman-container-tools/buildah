@@ -1,79 +1,15 @@
-//go:build linux || freebsd
-
 package chrootuser
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"os/user"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
-
-	"go.podman.io/storage/pkg/reexec"
-	"golang.org/x/sys/unix"
 )
-
-const (
-	openChrootedCommand = "chrootuser-open"
-)
-
-func init() {
-	reexec.Register(openChrootedCommand, openChrootedFileMain)
-}
-
-func openChrootedFileMain() {
-	status := 0
-	flag.Parse()
-	if len(flag.Args()) < 1 {
-		os.Exit(1)
-	}
-	// Our first parameter is the directory to chroot into.
-	if err := unix.Chdir(flag.Arg(0)); err != nil {
-		fmt.Fprintf(os.Stderr, "chdir(): %v", err)
-		os.Exit(1)
-	}
-	if err := unix.Chroot(flag.Arg(0)); err != nil {
-		fmt.Fprintf(os.Stderr, "chroot(): %v", err)
-		os.Exit(1)
-	}
-	// Anything else is a file we want to dump out.
-	for _, filename := range flag.Args()[1:] {
-		f, err := os.Open(filename)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "open(%q): %v", filename, err)
-			status = 1
-			continue
-		}
-		_, err = io.Copy(os.Stdout, f)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "read(%q): %v", filename, err)
-		}
-		f.Close()
-	}
-	os.Exit(status)
-}
-
-func openChrootedFile(rootdir, filename string) (*exec.Cmd, io.ReadCloser, error) {
-	// The child process expects a chroot and one or more filenames that
-	// will be consulted relative to the chroot directory and concatenated
-	// to its stdout.  Start it up.
-	cmd := reexec.Command(openChrootedCommand, rootdir, filename)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, nil, err
-	}
-	err = cmd.Start()
-	if err != nil {
-		return nil, nil, err
-	}
-	// Hand back the child's stdout for reading, and the child to reap.
-	return cmd, stdout, nil
-}
 
 var lookupUser, lookupGroup sync.Mutex
 
@@ -87,6 +23,23 @@ type lookupGroupEntry struct {
 	name string
 	gid  uint64
 	user string
+}
+
+func openChrootedFile(rootdir, path string) (*os.File, error) {
+	f, err := os.OpenInRoot(rootdir, path)
+	if err != nil {
+		// Ignore basically all errors, since we didn't check the exit
+		// status when we used to use a subprocess.
+		// Return an effectively-empty result, so that the caller will
+		// behave as though it read an empty file.
+		var pw *os.File
+		f, pw, err = os.Pipe()
+		if err != nil {
+			return nil, err
+		}
+		pw.Close()
+	}
+	return f, err
 }
 
 func scanWithoutComments(rc *bufio.Scanner) (string, bool) {
@@ -151,13 +104,10 @@ func parseNextGroup(rc *bufio.Scanner) *lookupGroupEntry {
 }
 
 func lookupUserInContainer(rootdir, username string) (uid uint64, gid uint64, err error) {
-	cmd, f, err := openChrootedFile(rootdir, "/etc/passwd")
+	f, err := openChrootedFile(rootdir, "etc/passwd")
 	if err != nil {
 		return 0, 0, err
 	}
-	defer func() {
-		_ = cmd.Wait()
-	}()
 	rc := bufio.NewScanner(f)
 	defer f.Close()
 
@@ -177,13 +127,10 @@ func lookupUserInContainer(rootdir, username string) (uid uint64, gid uint64, er
 }
 
 func lookupGroupForUIDInContainer(rootdir string, userid uint64) (username string, gid uint64, err error) {
-	cmd, f, err := openChrootedFile(rootdir, "/etc/passwd")
+	f, err := openChrootedFile(rootdir, "etc/passwd")
 	if err != nil {
 		return "", 0, err
 	}
-	defer func() {
-		_ = cmd.Wait()
-	}()
 	rc := bufio.NewScanner(f)
 	defer f.Close()
 
@@ -209,13 +156,10 @@ func lookupAdditionalGroupsForUIDInContainer(rootdir string, userid uint64) (gid
 		return nil, err
 	}
 
-	cmd, f, err := openChrootedFile(rootdir, "/etc/group")
+	f, err := openChrootedFile(rootdir, "etc/group")
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		_ = cmd.Wait()
-	}()
 	rc := bufio.NewScanner(f)
 	defer f.Close()
 
@@ -224,7 +168,7 @@ func lookupAdditionalGroupsForUIDInContainer(rootdir string, userid uint64) (gid
 
 	grp := parseNextGroup(rc)
 	for grp != nil {
-		if strings.Contains(grp.user, username) {
+		if slices.Contains(strings.Split(grp.user, ","), username) {
 			gid = append(gid, uint32(grp.gid))
 		}
 		grp = parseNextGroup(rc)
@@ -233,13 +177,10 @@ func lookupAdditionalGroupsForUIDInContainer(rootdir string, userid uint64) (gid
 }
 
 func lookupGroupInContainer(rootdir, groupname string) (gid uint64, err error) {
-	cmd, f, err := openChrootedFile(rootdir, "/etc/group")
+	f, err := openChrootedFile(rootdir, "etc/group")
 	if err != nil {
 		return 0, err
 	}
-	defer func() {
-		_ = cmd.Wait()
-	}()
 	rc := bufio.NewScanner(f)
 	defer f.Close()
 
@@ -259,13 +200,10 @@ func lookupGroupInContainer(rootdir, groupname string) (gid uint64, err error) {
 }
 
 func lookupUIDInContainer(rootdir string, uid uint64) (string, uint64, error) {
-	cmd, f, err := openChrootedFile(rootdir, "/etc/passwd")
+	f, err := openChrootedFile(rootdir, "etc/passwd")
 	if err != nil {
 		return "", 0, err
 	}
-	defer func() {
-		_ = cmd.Wait()
-	}()
 	rc := bufio.NewScanner(f)
 	defer f.Close()
 
@@ -285,13 +223,10 @@ func lookupUIDInContainer(rootdir string, uid uint64) (string, uint64, error) {
 }
 
 func lookupHomedirInContainer(rootdir string, uid uint64) (string, error) {
-	cmd, f, err := openChrootedFile(rootdir, "/etc/passwd")
+	f, err := openChrootedFile(rootdir, "etc/passwd")
 	if err != nil {
 		return "", err
 	}
-	defer func() {
-		_ = cmd.Wait()
-	}()
 	rc := bufio.NewScanner(f)
 	defer f.Close()
 
