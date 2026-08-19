@@ -8249,6 +8249,13 @@ _EOF
 
   cat > $contextdir/Dockerfile << _EOF
 FROM scratch
+ADD --checksum=sha256:0000000000000000000000000000000000000000000000000000000000000000 http://0.0.0.0:${HTTP_SERVER_PORT}/git/podman.git#v5.0 /src
+_EOF
+  run_buildah 125 build -f $contextdir/Dockerfile -t git-image $contextdir
+  expect_output --substring "checksum flag is not supported for Git sources"
+
+  cat > $contextdir/Dockerfile << _EOF
+FROM scratch
 ADD http://0.0.0.0:${HTTP_SERVER_PORT}/git/podman.git#nosuchbranch /src
 _EOF
   run_buildah 125 build -f $contextdir/Dockerfile -t git-image $contextdir
