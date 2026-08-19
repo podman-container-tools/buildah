@@ -342,6 +342,7 @@ github.com/opencontainers/cgroups/internal/path
 github.com/opencontainers/go-digest
 # github.com/opencontainers/image-spec v1.1.1
 ## explicit; go 1.18
+github.com/opencontainers/image-spec/identity
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
 # github.com/opencontainers/runc v1.5.1
