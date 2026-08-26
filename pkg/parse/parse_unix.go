@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/moby/sys/devices"
 	"github.com/opencontainers/cgroups/devices/config"
@@ -18,6 +19,13 @@ func DeviceFromPath(device string) (define.ContainerDevices, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	if strings.HasPrefix(src, "nvidia.com") {
+		device := define.BuildahDevice{Source: src, Destination: dst}
+		devs = append(devs, device)
+		return devs, nil
+	}
+
 	if linkTarget, err := os.Readlink(src); err == nil {
 		if filepath.IsAbs(linkTarget) {
 			src = linkTarget
