@@ -583,7 +583,11 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 		var multiErr *multierror.Error
 		var getErr, closeErr, renameErr, putErr error
 		var wg sync.WaitGroup
-		if urlsource.IsRemote(src) || urlsource.IsGit(src) {
+		isGitSource := urlsource.IsGit(src)
+		if urlsource.IsRemote(src) || isGitSource {
+			if isGitSource && options.Checksum != "" {
+				return errors.New("checksum flag is not supported for Git sources")
+			}
 			pipeReader, pipeWriter := io.Pipe()
 			var srcDigest digest.Digest
 			if options.Checksum != "" {
@@ -594,7 +598,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 			}
 
 			wg.Add(1)
-			if urlsource.IsGit(src) {
+			if isGitSource {
 				go func() {
 					defer wg.Done()
 					defer pipeWriter.Close()
