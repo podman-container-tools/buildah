@@ -99,3 +99,56 @@ func TestHistoryEntriesEqual(t *testing.T) {
 		})
 	}
 }
+
+func TestStageMatchesNoCacheFilter(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		description   string
+		noCacheFilter map[string]struct{}
+		stageName     string
+		stagePosition int
+		matches       bool
+	}{
+		{
+			description:   "empty filter never matches",
+			noCacheFilter: map[string]struct{}{},
+			stageName:     "build",
+			stagePosition: 0,
+			matches:       false,
+		},
+		{
+			description:   "matches by stage name",
+			noCacheFilter: map[string]struct{}{"build": {}},
+			stageName:     "build",
+			stagePosition: 0,
+			matches:       true,
+		},
+		{
+			description:   "matches by numeric position",
+			noCacheFilter: map[string]struct{}{"1": {}},
+			stageName:     "1",
+			stagePosition: 1,
+			matches:       true,
+		},
+		{
+			description:   "unrelated name in filter does not match",
+			noCacheFilter: map[string]struct{}{"other": {}},
+			stageName:     "build",
+			stagePosition: 0,
+			matches:       false,
+		},
+		{
+			description:   "named stage not matched by its numeric position alone",
+			noCacheFilter: map[string]struct{}{"2": {}},
+			stageName:     "build",
+			stagePosition: 0,
+			matches:       false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.description, func(t *testing.T) {
+			matches := stageMatchesNoCacheFilter(tc.noCacheFilter, tc.stageName, tc.stagePosition)
+			assert.Equal(t, tc.matches, matches, tc.description)
+		})
+	}
+}

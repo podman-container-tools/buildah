@@ -131,6 +131,7 @@ type executor struct {
 	noHostname                              bool
 	noHosts                                 bool
 	useCache                                bool
+	noCacheFilter                           map[string]struct{} // stage names/indices for which cache lookups are always skipped
 	removeIntermediateCtrs                  bool
 	forceRmIntermediateCtrs                 bool
 	imageMap                                map[int]string              // Used to map from stage indexes to images that we create to be used in a later FROM...AS construct.  Serialized by stagesLock.
@@ -280,6 +281,11 @@ func newExecutor(logger *logrus.Logger, logPrefix string, store storage.Store, o
 		wrappedAdditionalBuildContexts[name] = &additionalBuildContext{AdditionalBuildContext: *ctx}
 	}
 
+	noCacheFilter := make(map[string]struct{}, len(options.NoCacheFilter))
+	for _, stageNameOrIndex := range options.NoCacheFilter {
+		noCacheFilter[stageNameOrIndex] = struct{}{}
+	}
+
 	exec := executor{
 		args:                                    options.Args,
 		cacheFrom:                               options.CacheFrom,
@@ -342,6 +348,7 @@ func newExecutor(logger *logrus.Logger, logPrefix string, store storage.Store, o
 		noHostname:                              options.CommonBuildOpts.NoHostname,
 		noHosts:                                 options.CommonBuildOpts.NoHosts,
 		useCache:                                !options.NoCache,
+		noCacheFilter:                           noCacheFilter,
 		removeIntermediateCtrs:                  options.RemoveIntermediateCtrs,
 		forceRmIntermediateCtrs:                 options.ForceRmIntermediateCtrs,
 		imageMap:                                make(map[int]string),
@@ -1244,6 +1251,19 @@ func (b *executor) Build(ctx context.Context, stages imagebuilder.Stages) (image
 		}
 		slices.Sort(unusedList)
 		fmt.Fprintf(b.out, "[Warning] one or more build args were not consumed: %v\n", unusedList)
+	}
+
+	if len(b.noCacheFilter) > 0 {
+		unusedList := make([]string, 0, len(b.noCacheFilter))
+		for stageNameOrIndex := range b.noCacheFilter {
+			if _, ok := dependencyMap[stageNameOrIndex]; !ok {
+				unusedList = append(unusedList, stageNameOrIndex)
+			}
+		}
+		if len(unusedList) > 0 {
+			slices.Sort(unusedList)
+			fmt.Fprintf(b.out, "[Warning] one or more --no-cache-filter values did not match any stage: %v\n", unusedList)
+		}
 	}
 
 	// Add additional tags and print image names recorded in storage
