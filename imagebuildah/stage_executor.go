@@ -1279,12 +1279,27 @@ func (s *stageExecutor) getContentSummaryAfterAddingContent() string {
 	return summary
 }
 
+// stageMatchesNoCacheFilter reports whether a stage, identified by its name (the
+// alias given after "AS", or the stringified position if it has none) or its
+// numeric position, was named in a --no-cache-filter argument.
+func stageMatchesNoCacheFilter(noCacheFilter map[string]struct{}, stageName string, stagePosition int) bool {
+	return internalUtil.SetHas(noCacheFilter, stageName) || internalUtil.SetHas(noCacheFilter, strconv.Itoa(stagePosition))
+}
+
 // Execute runs each of the steps in the stage's parsed tree, in turn.
 func (s *stageExecutor) execute(ctx context.Context, base string) (imgID string, commitResults *buildah.CommitResults, onlyBaseImg bool, err error) {
 	var resourceUsage rusage.Rusage
 	stage := s.stage
 	ib := stage.Builder
-	checkForLayers := s.executor.layers && s.executor.useCache
+	stageNoCache := stageMatchesNoCacheFilter(s.executor.noCacheFilter, stage.Name, stage.Position)
+	checkForLayers := s.executor.layers && s.executor.useCache && !stageNoCache
+	if stageNoCache {
+		s.executor.stagesLock.Lock()
+		delete(s.executor.unusedNoCacheFilter, stage.Name)
+		delete(s.executor.unusedNoCacheFilter, strconv.Itoa(stage.Position))
+		s.executor.stagesLock.Unlock()
+		logrus.Debugf("not checking for cached layers for stage %q (%d): matched --no-cache-filter", stage.Name, stage.Position)
+	}
 	moreStages := s.index < len(s.stages)-1
 	lastStage := !moreStages
 	onlyBaseImage := false
