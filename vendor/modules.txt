@@ -15,8 +15,8 @@ github.com/Azure/go-ansiterm/winterm
 ## explicit; go 1.18
 github.com/BurntSushi/toml
 github.com/BurntSushi/toml/internal
-# github.com/Microsoft/go-winio v0.6.2
-## explicit; go 1.21
+# github.com/Microsoft/go-winio v0.6.3-0.20251027160822-ad3df93bed29
+## explicit; go 1.23.0
 github.com/Microsoft/go-winio
 github.com/Microsoft/go-winio/internal/fs
 github.com/Microsoft/go-winio/internal/socket
@@ -257,8 +257,8 @@ github.com/miekg/pkcs11
 # github.com/mistifyio/go-zfs/v4 v4.0.0
 ## explicit; go 1.14
 github.com/mistifyio/go-zfs/v4
-# github.com/moby/buildkit v0.31.2
-## explicit; go 1.25.9
+# github.com/moby/buildkit v0.32.2
+## explicit; go 1.26.3
 github.com/moby/buildkit/frontend/dockerfile/command
 github.com/moby/buildkit/frontend/dockerfile/parser
 github.com/moby/buildkit/frontend/dockerfile/shell
