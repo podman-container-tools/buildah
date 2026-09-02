@@ -10752,3 +10752,68 @@ _EOF
     done
   done
 }
+
+@test "bud multi-stage build context isolation and variant preservation" {
+  # Get host arch so we can ensure our test architecture is different
+  run_buildah info --format '{{.host.arch}}'
+  host_arch="$output"
+  
+  # Select a test architecture + variant that is guaranteed to be different from the host.
+  # We use 'arm' and 'arm64' because they both officially support OCI variants.
+  test_arch="arm"
+  test_variant="v7"
+  if [[ "$host_arch" == "arm" ]]; then
+    test_arch="arm64"
+    test_variant="v8"
+  fi
+
+  local contextdir="${TEST_SCRATCH_DIR}/multi-stage-variant"
+  mkdir -p "$contextdir"
+
+  # 1. We build a local base image with a variant first, so it sits in local storage.
+  cat > "$contextdir/Dockerfile.base" << EOF
+FROM scratch
+ENV STAGE=base
+EOF
+  run_buildah build $WITH_POLICY_JSON --platform=linux/${test_arch}/${test_variant} -t local-cross-builder -f "$contextdir/Dockerfile.base" "$contextdir"
+
+  # 2. Main Dockerfile combining both tests
+  cat > "$contextdir/Dockerfile" << EOF
+ARG BASE=local-cross-builder
+
+# Stage 1: Explicitly use --platform.
+# Tests that the parser handles platforms correctly.
+FROM --platform=linux/${test_arch}/${test_variant} scratch AS cross-builder
+ENV STAGE=cross-builder
+
+# Stage 2: Independent sibling stage with NO --platform.
+# Proves that the --platform from Stage 1 DOES NOT LEAK here.
+FROM scratch AS sibling
+ENV STAGE=sibling
+
+# Stage 3: Dependent stage using the ARG.
+# Proves the original bug is fixed (pullPolicyNewer doesn't crash resolving 'local-cross-builder')
+# AND proves that the variant is preserved.
+FROM \${BASE} AS final
+ENV STAGE=final
+EOF
+
+  run_buildah build $WITH_POLICY_JSON --target cross-builder -t test-cross-builder "$contextdir"
+  
+  run_buildah inspect --format '{{.OCIv1.Architecture}}/{{.OCIv1.Variant}}' test-cross-builder
+  expect_output "${test_arch}/${test_variant}"
+
+  # --- TEST 1: Prove context isolation (No Leakage) ---
+  run_buildah build $WITH_POLICY_JSON --target sibling -t test-sibling "$contextdir"
+
+  # The sibling MUST match the host architecture, proving Stage 1 did not leak into Stage 2
+  run_buildah inspect --format '{{.OCIv1.Architecture}}' test-sibling
+  expect_output "$host_arch"
+
+  # --- TEST 2: Prove local resolution and variant preservation ---
+  run_buildah build $WITH_POLICY_JSON --target final -t test-final "$contextdir"
+
+  # The final image MUST retain the exact architecture AND variant from Stage 1.
+  run_buildah inspect --format '{{.OCIv1.Architecture}}/{{.OCIv1.Variant}}' test-final
+  expect_output "${test_arch}/${test_variant}"
+}
