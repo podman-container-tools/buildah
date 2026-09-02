@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -3349,4 +3350,141 @@ func testSymlink(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "new-target", got)
 	})
+}
+
+func TestAttemptUnpackDockerCompatibilityNoChroot(t *testing.T) {
+	couldChroot := canChroot
+	canChroot = false
+	testAttemptUnpackDockerCompatibility(t)
+	canChroot = couldChroot
+}
+
+func testAttemptUnpackDockerCompatibility(t *testing.T) {
+	uidMap := []idtools.IDMap{{HostID: os.Getuid(), ContainerID: 0, Size: 1}}
+	gidMap := []idtools.IDMap{{HostID: os.Getgid(), ContainerID: 0, Size: 1}}
+
+	// create a gzip'd tarball in memory containing a single file "hello.txt"
+	innerContent := []byte("hello from inside the archive")
+	var innerBuf bytes.Buffer
+	gw := gzip.NewWriter(&innerBuf)
+	tw := tar.NewWriter(gw)
+	err := tw.WriteHeader(&tar.Header{
+		Name:     "hello.txt",
+		Size:     int64(len(innerContent)),
+		Mode:     0o644,
+		Typeflag: tar.TypeReg,
+	})
+	require.NoError(t, err)
+	_, err = tw.Write(innerContent)
+	require.NoError(t, err)
+
+	err = tw.WriteHeader(&tar.Header{
+		Name:     "subdir",
+		Mode:     0o755,
+		Typeflag: tar.TypeDir,
+	})
+	require.NoError(t, err)
+
+	nestedFileContent := []byte("hello from nested directory")
+	err = tw.WriteHeader(&tar.Header{
+		Name:     "subdir/nested-file.txt",
+		Size:     int64(len(nestedFileContent)),
+		Mode:     0o644,
+		Typeflag: tar.TypeReg,
+	})
+	require.NoError(t, err)
+	_, err = tw.Write(nestedFileContent)
+	require.NoError(t, err)
+
+	err = tw.WriteHeader(&tar.Header{
+		Name:     "hardlink-to-hello.txt",
+		Linkname: "hello.txt",
+		Mode:     0o644,
+		Typeflag: tar.TypeLink,
+	})
+	require.NoError(t, err)
+
+	err = tw.WriteHeader(&tar.Header{
+		Name:     "link-to-hello.txt",
+		Linkname: "hello.txt",
+		Mode:     0o777,
+		Typeflag: tar.TypeSymlink,
+	})
+	require.NoError(t, err)
+
+	if uid == 0 {
+		err = tw.WriteHeader(&tar.Header{
+			Name:     "null-dev",
+			Devmajor: 1,
+			Devminor: 3,
+			Mode:     0o600,
+			Typeflag: tar.TypeChar,
+		})
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, tw.Close())
+	require.NoError(t, gw.Close())
+
+	// create an outer archive that contains the gzip'd tarball as a regular file
+	archiveBytes := innerBuf.Bytes()
+	outerArchive := makeArchive([]tar.Header{
+		{
+			Name:     "archive.tar.gz",
+			Size:     int64(len(archiveBytes)),
+			Mode:     0o644,
+			Typeflag: tar.TypeReg,
+		},
+	}, map[string][]byte{
+		"archive.tar.gz": archiveBytes,
+	})
+
+	dest := t.TempDir()
+	putOptions := PutOptions{
+		UIDMap:                           uidMap,
+		GIDMap:                           gidMap,
+		AttemptUnpackDockerCompatibility: true,
+	}
+	err = Put(dest, dest, putOptions, outerArchive)
+	require.NoError(t, err)
+
+	// the inner file should have been extracted
+	extractedPath := filepath.Join(dest, "hello.txt")
+	content, err := os.ReadFile(extractedPath)
+	require.NoError(t, err, "extracted file hello.txt should exist")
+	assert.Equal(t, string(innerContent), string(content))
+
+	subdirPath := filepath.Join(dest, "subdir")
+	st, err := os.Stat(subdirPath)
+	require.NoError(t, err, "extracted directory subdir should exist")
+	assert.True(t, st.IsDir(), "subdir should be a directory")
+
+	nestedFilePath := filepath.Join(dest, "subdir", "nested-file.txt")
+	nestedContent, err := os.ReadFile(nestedFilePath)
+	require.NoError(t, err, "extracted file subdir/nested-file.txt should exist")
+	assert.Equal(t, string(nestedFileContent), string(nestedContent))
+
+	symlinkPath := filepath.Join(dest, "link-to-hello.txt")
+	linkTarget, err := os.Readlink(symlinkPath)
+	require.NoError(t, err, "extracted symlink link-to-hello.txt should exist")
+	assert.Equal(t, "hello.txt", linkTarget)
+
+	hardlinkPath := filepath.Join(dest, "hardlink-to-hello.txt")
+	hardlinkInfo, err := os.Stat(hardlinkPath)
+	require.NoError(t, err, "extracted hardlink-to-hello.txt should exist")
+	helloInfo, err := os.Stat(extractedPath)
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(helloInfo, hardlinkInfo), "hardlink-to-hello.txt should be a hardlink to hello.txt")
+
+	if uid == 0 {
+		devPath := filepath.Join(dest, "null-dev")
+		st, err := os.Lstat(devPath)
+		require.NoError(t, err, "extracted device node null-dev should exist")
+		assert.NotEqual(t, os.FileMode(0), st.Mode()&os.ModeCharDevice, "null-dev should be a character device")
+	}
+
+	// the archive file should have been removed
+	archivePath := filepath.Join(dest, "archive.tar.gz")
+	_, err = os.Stat(archivePath)
+	assert.True(t, os.IsNotExist(err), "archive.tar.gz should have been removed after extraction")
 }

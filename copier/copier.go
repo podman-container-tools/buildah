@@ -444,25 +444,26 @@ func Get(root string, directory string, options GetOptions, globs []string, bulk
 
 // PutOptions controls parts of Put()'s behavior.
 type PutOptions struct {
-	UIDMap, GIDMap       []idtools.IDMap    // map from containerIDs to hostIDs when writing contents to disk
-	DefaultDirOwner      *idtools.IDPair    // set ownership of implicitly-created directories, default is ChownDirs, or 0:0 if ChownDirs not set
-	DefaultDirMode       *os.FileMode       // set permissions on implicitly-created directories, default is Chmod or ChmodDirs, or 0755 if neither is set
-	Chmod                string             // set permissions in octal or symbolic notation. overrides ChmodDirs and ChmodFiles if set
-	ChownDirs            *idtools.IDPair    // set ownership of newly-created directories
-	ChmodDirs            *os.FileMode       // set permissions on newly-created directories
-	ChownFiles           *idtools.IDPair    // set ownership of newly-created files
-	ChmodFiles           *os.FileMode       // set permissions on newly-created files
-	StripSetuidBit       bool               // strip the setuid bit off of items being written
-	StripSetgidBit       bool               // strip the setgid bit off of items being written
-	StripStickyBit       bool               // strip the sticky bit off of items being written
-	StripXattrs          bool               // don't bother trying to set extended attributes of items being copied
-	IgnoreXattrErrors    bool               // ignore any errors encountered when attempting to set extended attributes
-	IgnoreDevices        bool               // ignore items which are character or block devices
-	NoOverwriteDirNonDir bool               // instead of quietly overwriting directories with non-directories, return an error
-	NoOverwriteNonDirDir bool               // instead of quietly overwriting non-directories with directories, return an error
-	Rename               map[string]string  // rename items with the specified names, or under the specified names
-	Timestamp            *time.Time         // override timestamps on all extracted content
-	CreateDestPath       types.OptionalBool // create the destination path if it doesn't already exist, default is true
+	UIDMap, GIDMap                   []idtools.IDMap    // map from containerIDs to hostIDs when writing contents to disk
+	DefaultDirOwner                  *idtools.IDPair    // set ownership of implicitly-created directories, default is ChownDirs, or 0:0 if ChownDirs not set
+	DefaultDirMode                   *os.FileMode       // set permissions on implicitly-created directories, default is Chmod or ChmodDirs, or 0755 if neither is set
+	Chmod                            string             // set permissions in octal or symbolic notation. overrides ChmodDirs and ChmodFiles if set
+	ChownDirs                        *idtools.IDPair    // set ownership of newly-created directories
+	ChmodDirs                        *os.FileMode       // set permissions on newly-created directories
+	ChownFiles                       *idtools.IDPair    // set ownership of newly-created files
+	ChmodFiles                       *os.FileMode       // set permissions on newly-created files
+	StripSetuidBit                   bool               // strip the setuid bit off of items being written
+	StripSetgidBit                   bool               // strip the setgid bit off of items being written
+	StripStickyBit                   bool               // strip the sticky bit off of items being written
+	StripXattrs                      bool               // don't bother trying to set extended attributes of items being copied
+	IgnoreXattrErrors                bool               // ignore any errors encountered when attempting to set extended attributes
+	IgnoreDevices                    bool               // ignore items which are character or block devices
+	NoOverwriteDirNonDir             bool               // instead of quietly overwriting directories with non-directories, return an error
+	NoOverwriteNonDirDir             bool               // instead of quietly overwriting non-directories with directories, return an error
+	Rename                           map[string]string  // rename items with the specified names, or under the specified names
+	Timestamp                        *time.Time         // override timestamps on all extracted content
+	CreateDestPath                   types.OptionalBool // create the destination path if it doesn't already exist, default is true
+	AttemptUnpackDockerCompatibility bool               // detect if globbed items are possibly-compressed archives, and if so, extract them instead of copying them
 }
 
 // Put extracts an archive from the bulkReader at the specified directory.
@@ -2039,7 +2040,7 @@ func copierHandlerPut(bulkReader io.Reader, req request, idMappings *idtools.IDM
 		}
 		return nil
 	}
-	createFile := func(path string, tr *tar.Reader) (int64, error) {
+	createFile := func(path string, r io.Reader) (int64, error) {
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_EXCL, 0o600)
 		if err != nil && errors.Is(err, os.ErrExist) {
 			if req.PutOptions.NoOverwriteDirNonDir {
@@ -2070,7 +2071,7 @@ func copierHandlerPut(bulkReader io.Reader, req request, idMappings *idtools.IDM
 			return 0, fmt.Errorf("copier: put: error opening file %q for writing: %w", path, err)
 		}
 		defer f.Close()
-		n, err := io.Copy(f, tr)
+		n, err := io.Copy(f, r)
 		if err != nil {
 			return n, fmt.Errorf("copier: put: error writing file %q: %w", path, err)
 		}
@@ -2111,15 +2112,14 @@ func copierHandlerPut(bulkReader io.Reader, req request, idMappings *idtools.IDM
 			}
 		}()
 		ignoredItems := make(map[string]struct{})
-		tr := tar.NewReader(bulkReader)
-		hdr, err := tr.Next()
-		for err == nil {
+
+		var processEntry func(hdr *tar.Header, tr io.Reader, baseDirectory string) error
+		processEntry = func(hdr *tar.Header, tr io.Reader, baseDirectory string) error {
 			nameBeforeRenaming := hdr.Name
 			if len(hdr.Name) == 0 {
 				// no name -> ignore the entry
 				ignoredItems[nameBeforeRenaming] = struct{}{}
-				hdr, err = tr.Next()
-				continue
+				return nil
 			}
 			if req.PutOptions.Rename != nil {
 				hdr.Name = handleRename(req.PutOptions.Rename, hdr.Name)
@@ -2144,7 +2144,7 @@ func copierHandlerPut(bulkReader io.Reader, req request, idMappings *idtools.IDM
 			}
 			// make sure the parent directory exists, including for tar.TypeXGlobalHeader entries
 			// that we otherwise ignore, because that's what docker build does with them
-			path := filepath.Join(targetDirectory, cleanerReldirectory(filepath.FromSlash(hdr.Name)))
+			path := filepath.Join(baseDirectory, cleanerReldirectory(filepath.FromSlash(hdr.Name)))
 			if err := ensureDirectoryUnderRoot(filepath.Dir(path)); err != nil {
 				return err
 			}
@@ -2175,24 +2175,53 @@ func copierHandlerPut(bulkReader io.Reader, req request, idMappings *idtools.IDM
 			devMajor := uint32(hdr.Devmajor)
 			devMinor := uint32(hdr.Devminor)
 			mode := os.FileMode(hdr.Mode) & os.ModePerm
+			var err error
 			switch hdr.Typeflag {
 			// no type flag for sockets
 			default:
 				return fmt.Errorf("unrecognized Typeflag %c", hdr.Typeflag)
 			case tar.TypeReg:
-				var written int64
-				written, err = createFile(path, tr)
-				// only check the length if there wasn't an error, which we'll
-				// check along with errors for other types of entries
-				if err == nil && written != hdr.Size {
-					return fmt.Errorf("copier: put: error creating regular file %q: incorrect length (%d != %d)", path, written, hdr.Size)
+				if req.PutOptions.AttemptUnpackDockerCompatibility {
+					var raw bytes.Buffer
+					rc, _, derr := compression.AutoDecompress(io.TeeReader(tr, &raw))
+					if derr != nil {
+						return fmt.Errorf("copier: put: error decompressing entry %q for unpacking: %w", path, derr)
+					}
+					defer rc.Close()
+					tr2 := tar.NewReader(rc)
+					nestedHdr, nerr := tr2.Next()
+					if nerr == nil {
+						destDir := filepath.Dir(path)
+						for nerr == nil {
+							if perr := processEntry(nestedHdr, tr2, destDir); perr != nil {
+								return fmt.Errorf("copier: put: error reading unpacked entry %q from archive %q: %w", nestedHdr.Name, path, perr)
+							}
+							nestedHdr, nerr = tr2.Next()
+						}
+						if nerr != io.EOF {
+							return fmt.Errorf("copier: put: error reading unpacked archive %q: %w", path, nerr)
+						}
+						return nil
+					}
+
+					var written int64
+					written, err = createFile(path, io.MultiReader(bytes.NewReader(raw.Bytes()), tr))
+					if err == nil && written != hdr.Size {
+						return fmt.Errorf("copier: put: error creating regular file %q: incorrect length (%d != %d)", path, written, hdr.Size)
+					}
+				} else {
+					var written int64
+					written, err = createFile(path, tr)
+					if err == nil && written != hdr.Size {
+						return fmt.Errorf("copier: put: error creating regular file %q: incorrect length (%d != %d)", path, written, hdr.Size)
+					}
 				}
 			case tar.TypeLink:
 				var linkTarget string
 				if _, ignoredTarget := ignoredItems[hdr.Linkname]; ignoredTarget {
 					// hard link to an ignored item: skip this, too
 					ignoredItems[nameBeforeRenaming] = struct{}{}
-					goto nextHeader
+					return nil
 				}
 				if req.PutOptions.Rename != nil {
 					hdr.Linkname = handleRename(req.PutOptions.Rename, hdr.Linkname)
@@ -2228,7 +2257,7 @@ func copierHandlerPut(bulkReader io.Reader, req request, idMappings *idtools.IDM
 			case tar.TypeChar:
 				if req.PutOptions.IgnoreDevices {
 					ignoredItems[nameBeforeRenaming] = struct{}{}
-					goto nextHeader
+					return nil
 				}
 				if err = mknod(path, chrMode(0o600), int(mkdev(devMajor, devMinor))); err != nil && errors.Is(err, os.ErrExist) {
 					if req.PutOptions.NoOverwriteDirNonDir {
@@ -2243,7 +2272,7 @@ func copierHandlerPut(bulkReader io.Reader, req request, idMappings *idtools.IDM
 			case tar.TypeBlock:
 				if req.PutOptions.IgnoreDevices {
 					ignoredItems[nameBeforeRenaming] = struct{}{}
-					goto nextHeader
+					return nil
 				}
 				if err = mknod(path, blkMode(0o600), int(mkdev(devMajor, devMinor))); err != nil && errors.Is(err, os.ErrExist) {
 					if req.PutOptions.NoOverwriteDirNonDir {
@@ -2298,7 +2327,7 @@ func copierHandlerPut(bulkReader io.Reader, req request, idMappings *idtools.IDM
 				// https://www.openssl.org/source/openssl-1.1.1g.tar.gz, includes a
 				// comment=(40 byte hex string) at the start, possibly a digest.
 				// Don't try to create whatever path was used for the header.
-				goto nextHeader
+				return nil
 			}
 			// check for errors
 			if err != nil {
@@ -2361,7 +2390,14 @@ func copierHandlerPut(bulkReader io.Reader, req request, idMappings *idtools.IDM
 			if err := archive.WriteFileFlagsFromTarHeader(path, hdr); err != nil {
 				return fmt.Errorf("copier: put: error setting fflags on %q: %w", path, err)
 			}
-		nextHeader:
+			return nil
+		}
+		tr := tar.NewReader(bulkReader)
+		hdr, err := tr.Next()
+		for err == nil {
+			if err := processEntry(hdr, tr, targetDirectory); err != nil {
+				return err
+			}
 			hdr, err = tr.Next()
 		}
 		if err != io.EOF {
