@@ -39,7 +39,7 @@ func TestRusage(t *testing.T) {
 	}
 	before, err := Get()
 	require.Nil(t, err, "unexpected error from GetRusage before running child: %v", err)
-	cmd := reexec.Command(noopCommand)
+	cmd := reexec.CommandContext(t.Context(), noopCommand)
 	err = cmd.Run()
 	require.Nil(t, err, "unexpected error running child process: %v", err)
 	after, err := Get()

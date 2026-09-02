@@ -114,7 +114,7 @@ func unshareCmd(c *cobra.Command, args []string) error {
 		}
 		args = []string{shell}
 	}
-	cmd := exec.Command(args[0], args[1:]...)
+	cmd := exec.CommandContext(getContext(), args[0], args[1:]...)
 	cmd.Env = unshare.RootlessEnv()
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

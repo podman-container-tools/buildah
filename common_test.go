@@ -3,7 +3,6 @@ package buildah
 import (
 	"archive/tar"
 	"bytes"
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -42,7 +41,7 @@ func (ts *testRetryCopyImageWrappedStore) CreateImage(id string, names []string,
 
 func TestRetryCopyImage(t *testing.T) {
 	t.Parallel()
-	ctx := context.TODO()
+	ctx := t.Context()
 
 	graphDriverName := os.Getenv("STORAGE_DRIVER")
 	if graphDriverName == "" {

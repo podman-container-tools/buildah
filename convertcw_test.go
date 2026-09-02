@@ -2,7 +2,6 @@ package buildah
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -72,7 +71,7 @@ func TestCWConvertImage(t *testing.T) {
 	// or builder must enable sometime of locking mechanism i.e if
 	// routine is creating Builder other's must wait for it.
 	// Tracked here: https://github.com/containers/buildah/issues/5967
-	ctx := context.TODO()
+	ctx := t.Context()
 	for _, status := range []int{http.StatusOK, http.StatusInternalServerError} {
 		for _, ignoreChainRetrievalErrors := range []bool{false, true} {
 			for _, ignoreAttestationErrors := range []bool{false, true} {

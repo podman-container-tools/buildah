@@ -28,6 +28,12 @@ type PullOptions struct {
 
 // Pull `imageInput` from a container registry to `sourcePath`.
 func Pull(ctx context.Context, imageInput string, sourcePath string, options PullOptions) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	if err := fileutils.Exists(sourcePath); err == nil {
 		return fmt.Errorf("%q already exists", sourcePath)
 	}
@@ -92,6 +98,12 @@ func stringToImageReference(imageInput string) (types.ImageReference, error) {
 }
 
 func validateSourceImageReference(ctx context.Context, ref types.ImageReference, sysCtx *types.SystemContext) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	src, err := ref.NewImageSource(ctx, sysCtx)
 	if err != nil {
 		return fmt.Errorf("creating image source from reference: %w", err)

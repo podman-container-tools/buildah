@@ -4,6 +4,7 @@ package chroot
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -51,10 +52,23 @@ type runUsingChrootExecSubprocOptions struct {
 	NoPivot    bool
 }
 
-// RunUsingChroot runs a chrooted process, using some of the settings from the
+// RunUsingChroot() calls RunUsingChrootContext() with context.TODO().
+//
+//go:fix inline
+func RunUsingChroot(spec *specs.Spec, bundlePath, homeDir string, stdin io.Reader, stdout, stderr io.Writer, noPivot bool) (err error) {
+	return RunUsingChrootContext(context.TODO(), spec, bundlePath, homeDir, stdin, stdout, stderr, noPivot)
+}
+
+// RunUsingChrootContext runs a chrooted process, using some of the settings from the
 // passed-in spec, and using the specified bundlePath to hold temporary files,
 // directories, and mountpoints.
-func RunUsingChroot(spec *specs.Spec, bundlePath, homeDir string, stdin io.Reader, stdout, stderr io.Writer, noPivot bool) (err error) {
+func RunUsingChrootContext(ctx context.Context, spec *specs.Spec, bundlePath, homeDir string, stdin io.Reader, stdout, stderr io.Writer, noPivot bool) (err error) {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	var confwg sync.WaitGroup
 	var homeFound bool
 	for _, env := range spec.Process.Env {
@@ -127,6 +141,7 @@ func RunUsingChroot(spec *specs.Spec, bundlePath, homeDir string, stdin io.Reade
 
 	// Start the grandparent subprocess.
 	cmd := unshare.Command(runUsingChrootCommand)
+	cmd.Cmd = reexec.CommandContext(ctx, runUsingChrootCommand) // TODO: add an unshare.CommandContext()
 	setPdeathsig(cmd.Cmd)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 	cmd.Dir = "/"

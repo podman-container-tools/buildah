@@ -60,7 +60,7 @@ func main() {
 }
 
 func poke(c *cobra.Command, args []string) error {
-	ctx := context.TODO()
+	ctx := context.Background()
 
 	socketPath := c.Flag("connect").Value.String()
 	if socketPath == "" {

@@ -2,7 +2,6 @@ package buildah
 
 import (
 	"archive/tar"
-	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -48,7 +47,7 @@ func TestCommitLinkedLayers(t *testing.T) {
 	// or builder must enable sometime of locking mechanism i.e if
 	// routine is creating Builder other's must wait for it.
 	// Tracked here: https://github.com/containers/buildah/issues/5967
-	ctx := context.TODO()
+	ctx := t.Context()
 	now := time.Now()
 
 	graphDriverName := os.Getenv("STORAGE_DRIVER")
@@ -106,7 +105,7 @@ func TestCommitLinkedLayers(t *testing.T) {
 	require.NoError(t, err, "creating builder")
 	b.SetCreatedBy(imageName(layerNumber))
 	firstFile := makeFile("file0", 0)
-	err = b.Add("/", false, AddAndCopyOptions{}, firstFile)
+	err = b.AddContext(t.Context(), "/", false, AddAndCopyOptions{}, firstFile)
 	require.NoError(t, err, "adding", firstFile)
 	commitOptions := CommitOptions{
 		SystemContext: &testSystemContext,
@@ -123,7 +122,7 @@ func TestCommitLinkedLayers(t *testing.T) {
 	require.NoError(t, err, "creating builder")
 	b.SetCreatedBy(imageName(layerNumber))
 	secondFile := makeFile("file1", 0)
-	err = b.Add("/", false, AddAndCopyOptions{}, secondFile)
+	err = b.AddContext(t.Context(), "/", false, AddAndCopyOptions{}, secondFile)
 	require.NoError(t, err, "adding", secondFile)
 	commitOptions = CommitOptions{
 		SystemContext: &testSystemContext,
@@ -145,7 +144,7 @@ func TestCommitLinkedLayers(t *testing.T) {
 	seventhArchiveFile := makeArchive("file6", 0)
 	eighthFile := makeFile("file7", 0)
 	ninthArchiveFile := makeArchive("file8", 0)
-	err = b.Add("/", false, AddAndCopyOptions{}, sixthFile)
+	err = b.AddContext(t.Context(), "/", false, AddAndCopyOptions{}, sixthFile)
 	require.NoError(t, err, "adding", sixthFile)
 	b.SetCreatedBy(imageName(layerNumber + 3))
 	b.AddPrependedLinkedLayer(nil, imageName(layerNumber), "", "", filepath.Dir(thirdFile))
@@ -197,7 +196,7 @@ func TestCommitLinkedLayers(t *testing.T) {
 	require.NoError(t, err, "creating builder")
 	b.SetCreatedBy(imageName(layerNumber))
 	tenthFile := makeFile("file9", 0)
-	err = b.Add("/", false, AddAndCopyOptions{}, tenthFile)
+	err = b.AddContext(t.Context(), "/", false, AddAndCopyOptions{}, tenthFile)
 	require.NoError(t, err, "adding", tenthFile)
 	commitOptions = CommitOptions{
 		SystemContext: &testSystemContext,
@@ -262,7 +261,7 @@ func TestCommitCompression(t *testing.T) {
 	// or builder must enable sometime of locking mechanism i.e if
 	// routine is creating Builder other's must wait for it.
 	// Tracked here: https://github.com/containers/buildah/issues/5967
-	ctx := context.TODO()
+	ctx := t.Context()
 
 	graphDriverName := os.Getenv("STORAGE_DRIVER")
 	if graphDriverName == "" {
@@ -289,7 +288,7 @@ func TestCommitCompression(t *testing.T) {
 	require.NoError(t, err, "creating builder")
 	payload := makeFile(t, "file0", 0)
 	b.SetCreatedBy("ADD file0 in /")
-	err = b.Add("/", false, AddAndCopyOptions{}, payload)
+	err = b.AddContext(t.Context(), "/", false, AddAndCopyOptions{}, payload)
 	require.NoError(t, err, "adding", payload)
 	for _, compressor := range []struct {
 		compression    archive.Compression
@@ -365,7 +364,7 @@ func TestCommitEmpty(t *testing.T) {
 	// or builder must enable sometime of locking mechanism i.e if
 	// routine is creating Builder other's must wait for it.
 	// Tracked here: https://github.com/containers/buildah/issues/5967
-	ctx := context.TODO()
+	ctx := t.Context()
 
 	graphDriverName := os.Getenv("STORAGE_DRIVER")
 	if graphDriverName == "" {
@@ -577,7 +576,7 @@ func TestCommitEmpty(t *testing.T) {
 }
 
 func TestCommitChmod(t *testing.T) {
-	ctx := context.TODO()
+	ctx := t.Context()
 	graphDriverName := os.Getenv("STORAGE_DRIVER")
 	if graphDriverName == "" {
 		graphDriverName = "vfs"
@@ -624,7 +623,7 @@ func TestCommitChmod(t *testing.T) {
 			err = os.Chmod(f, v.startMode)
 			require.NoError(t, err, "chmod", f)
 		}
-		err = b.Add("/", false, AddAndCopyOptions{Chmod: v.chmod}, f)
+		err = b.AddContext(t.Context(), "/", false, AddAndCopyOptions{Chmod: v.chmod}, f)
 		require.NoError(t, err, "adding", f)
 	}
 

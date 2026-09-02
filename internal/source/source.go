@@ -32,6 +32,12 @@ type ImageConfig struct {
 // writeManifest writes the specified OCI `manifest` to the source image at
 // `ociDest`.
 func writeManifest(ctx context.Context, manifest *specV1.Manifest, ociDest types.ImageDestination) (*digest.Digest, int64, error) {
+	select {
+	case <-ctx.Done():
+		return nil, -1, ctx.Err()
+	default:
+	}
+
 	rawData, err := json.Marshal(&manifest)
 	if err != nil {
 		return nil, -1, fmt.Errorf("marshalling manifest: %w", err)
@@ -48,6 +54,12 @@ func writeManifest(ctx context.Context, manifest *specV1.Manifest, ociDest types
 // readManifestFromImageSource reads the manifest from the specified image
 // source.  Note that the manifest is expected to be an OCI v1 manifest.
 func readManifestFromImageSource(ctx context.Context, src types.ImageSource) (*specV1.Manifest, *digest.Digest, int64, error) {
+	select {
+	case <-ctx.Done():
+		return nil, nil, -1, ctx.Err()
+	default:
+	}
+
 	rawData, mimeType, err := image.UnparsedInstance(src, nil).Manifest(ctx)
 	if err != nil {
 		return nil, nil, -1, err
@@ -69,6 +81,12 @@ func readManifestFromImageSource(ctx context.Context, src types.ImageSource) (*s
 // at `sourcePath` along with its digest.  The digest can later on be used to
 // locate the manifest on the file system.
 func readManifestFromOCIPath(ctx context.Context, sourcePath string) (*specV1.Manifest, *digest.Digest, int64, error) {
+	select {
+	case <-ctx.Done():
+		return nil, nil, -1, ctx.Err()
+	default:
+	}
+
 	ociRef, err := layout.ParseReference(sourcePath)
 	if err != nil {
 		return nil, nil, -1, err
@@ -87,6 +105,12 @@ func readManifestFromOCIPath(ctx context.Context, sourcePath string) (*specV1.Ma
 // specified `sourcePath`.  Note that if the path doesn't exist, it'll be
 // created along with the OCI directory layout.
 func openOrCreateSourceImage(ctx context.Context, sourcePath string) (types.ImageDestination, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	ociRef, err := layout.ParseReference(sourcePath)
 	if err != nil {
 		return nil, err
@@ -99,6 +123,12 @@ func openOrCreateSourceImage(ctx context.Context, sourcePath string) (types.Imag
 // addConfig adds `config` to `ociDest` and returns the corresponding blob
 // info.
 func addConfig(ctx context.Context, config *ImageConfig, ociDest types.ImageDestination) (*types.BlobInfo, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	rawData, err := json.Marshal(config)
 	if err != nil {
 		return nil, fmt.Errorf("marshalling config: %w", err)

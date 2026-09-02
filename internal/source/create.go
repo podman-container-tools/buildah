@@ -32,6 +32,12 @@ func (o *CreateOptions) createdTime() *time.Time {
 // Create creates an empty source image at the specified `sourcePath`.  Note
 // that `sourcePath` must not exist.
 func Create(ctx context.Context, sourcePath string, options CreateOptions) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	if err := fileutils.Exists(sourcePath); err == nil {
 		return fmt.Errorf("creating source image: %q already exists", sourcePath)
 	}

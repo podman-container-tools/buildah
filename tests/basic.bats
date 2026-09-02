@@ -145,3 +145,9 @@ load helpers
 
   assert "$output" "!~" "dev" "The Buildah version string does not mention 'dev'."
 }
+
+@test "experimental-timeout" {
+  _prefetch busybox
+  run_buildah 125 --experimental-timeout=1ns from busybox
+  expect_output --substring "context deadline exceeded"
+}

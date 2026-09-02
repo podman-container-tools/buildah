@@ -9,6 +9,7 @@ import (
 	"runtime/pprof"
 	"strings"
 	"syscall"
+	"time"
 
 	ispecs "github.com/opencontainers/image-spec/specs-go"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
@@ -58,6 +59,7 @@ type globalFlags struct {
 	MemoryProfile              string
 	UserShortNameAliasConfPath string
 	CgroupManager              string
+	ExperimentalTimeout        time.Duration
 }
 
 var rootCmd = &cobra.Command{
@@ -107,6 +109,7 @@ func mainInit() {
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
 	// rootCmd.TraverseChildren = true
 	rootCmd.Version = fmt.Sprintf("%s (image-spec %s, runtime-spec %s)", define.Version, ispecs.Version, rspecs.Version)
+	rootCmd.PersistentFlags().DurationVar(&globalFlagResults.ExperimentalTimeout, "experimental-timeout", 0, "global timeout") // maybe rename this at some point?
 	rootCmd.PersistentFlags().BoolVar(&globalFlagResults.Debug, "debug", false, "print debugging information")
 	// TODO Need to allow for environment variable
 	rootCmd.PersistentFlags().StringVar(&globalFlagResults.RegistriesConf, "registries-conf", "", "path to registries.conf file (not usually used)")
@@ -137,6 +140,9 @@ func mainInit() {
 	}
 	if err := rootCmd.PersistentFlags().MarkHidden("memory-profile"); err != nil {
 		logrus.Fatalf("unable to mark memory-profile flag as hidden: %v", err)
+	}
+	if err := rootCmd.PersistentFlags().MarkHidden("experimental-timeout"); err != nil {
+		logrus.Fatalf("unable to mark experimental-timeout flag as hidden: %v", err)
 	}
 	rootCmd.AddGroup(commandGroups...)
 }
@@ -293,7 +299,9 @@ func main() {
 	// Hard code TMPDIR functions to use $TMPDIR or /var/tmp
 	os.Setenv("TMPDIR", parse.GetTempDir())
 
-	if err := rootCmd.Execute(); err != nil {
+	err := rootCmd.Execute()
+	getContextCancel()()
+	if err != nil {
 		if logrus.IsLevelEnabled(logrus.TraceLevel) {
 			fmt.Fprintf(os.Stderr, "Error: %+v\n", err)
 		} else {

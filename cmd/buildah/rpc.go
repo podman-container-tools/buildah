@@ -77,7 +77,7 @@ func rpcCmd(c *cobra.Command, args []string) error {
 			logrus.Errorf("while waiting for rpc service to shut down: %v", err)
 		}
 	}()
-	cmd := exec.Command(args[0], args[1:]...)
+	cmd := exec.CommandContext(getContext(), args[0], args[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	envVar := c.Flag("env").Value.String()
 	if envVar != "" {

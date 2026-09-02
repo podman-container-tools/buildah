@@ -1,6 +1,7 @@
 package buildah
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -244,4 +245,11 @@ type netResult struct {
 	ipv6                              bool
 	keepHostResolvers                 bool
 	preferredHostContainersInternalIP string
+}
+
+// Run() calls RunContext() with context.TODO().
+//
+//go:fix inline
+func (b *Builder) Run(command []string, options RunOptions) error {
+	return b.RunContext(context.TODO(), command, options)
 }

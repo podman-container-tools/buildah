@@ -155,8 +155,14 @@ func separateDevicesFromRuntimeSpec(g *generate.Generator) define.ContainerDevic
 	return result
 }
 
-// Run runs the specified command in the container's root filesystem.
-func (b *Builder) Run(command []string, options RunOptions) error {
+// RunContext runs the specified command in the container's root filesystem.
+func (b *Builder) RunContext(ctx context.Context, command []string, options RunOptions) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	var runArtifacts *runMountArtifacts
 	if len(options.ExternalImageMounts) > 0 {
 		defer func() {
@@ -384,7 +390,7 @@ func (b *Builder) Run(command []string, options RunOptions) error {
 		ChownNew: idPair,
 		ChmodNew: &mode,
 	}
-	if err := copier.Mkdir(mountPoint, filepath.Join(mountPoint, spec.Process.Cwd), coptions); err != nil {
+	if err := copier.MkdirContext(ctx, mountPoint, filepath.Join(mountPoint, spec.Process.Cwd), coptions); err != nil {
 		return err
 	}
 
@@ -494,7 +500,7 @@ rootless=%d
 	}
 
 	// Setup OCI hooks
-	_, err = b.setupOCIHooks(spec, (len(options.Mounts) > 0 || len(volumes) > 0))
+	_, err = b.setupOCIHooks(ctx, spec, (len(options.Mounts) > 0 || len(volumes) > 0))
 	if err != nil {
 		return fmt.Errorf("unable to setup OCI hooks: %w", err)
 	}
@@ -508,14 +514,14 @@ rootless=%d
 		SystemContext:    options.SystemContext,
 	}
 
-	runArtifacts, err = b.setupMounts(mountPoint, spec, path, options.Mounts, bindFiles, volumes, options.CompatBuiltinVolumes, b.CommonBuildOpts.Volumes, options.RunMounts, runMountInfo)
+	runArtifacts, err = b.setupMounts(ctx, mountPoint, spec, path, options.Mounts, bindFiles, volumes, options.CompatBuiltinVolumes, b.CommonBuildOpts.Volumes, options.RunMounts, runMountInfo)
 	if err != nil {
 		return fmt.Errorf("resolving mountpoints for container %q: %w", b.ContainerID, err)
 	}
 
 	// Create any mount points that we need that aren't already present in
 	// the rootfs.
-	createdMountTargets, err := b.createMountTargets(spec)
+	createdMountTargets, err := b.createMountTargets(ctx, spec)
 	if err != nil {
 		return fmt.Errorf("ensuring mount targets for container %q: %w", b.ContainerID, err)
 	}
@@ -526,7 +532,7 @@ rootless=%d
 		// points to stick around.  They'll still get filtered out at
 		// commit-time if another concurrent Run() is keeping something
 		// busy.
-		if _, err := copier.ConditionalRemove(mountPoint, mountPoint, copier.ConditionalRemoveOptions{
+		if _, err := copier.ConditionalRemoveContext(ctx, mountPoint, mountPoint, copier.ConditionalRemoveOptions{
 			UIDMap: b.store.UIDMap(),
 			GIDMap: b.store.GIDMap(),
 			Paths:  createdMountTargets,
@@ -581,16 +587,16 @@ rootless=%d
 		if options.NoPivot {
 			moreCreateArgs = append(moreCreateArgs, "--no-pivot")
 		}
-		err = b.runUsingRuntimeSubproc(isolation, options, configureNetwork, networkString, moreCreateArgs, spec,
+		err = b.runUsingRuntimeSubproc(ctx, isolation, options, configureNetwork, networkString, moreCreateArgs, spec,
 			mountPoint, path, define.Package+"-"+filepath.Base(path), b.Container, hostsFile, resolvFile)
 	case IsolationChroot:
-		err = chroot.RunUsingChroot(spec, path, homeDir, options.Stdin, options.Stdout, options.Stderr, options.NoPivot)
+		err = chroot.RunUsingChrootContext(ctx, spec, path, homeDir, options.Stdin, options.Stdout, options.Stderr, options.NoPivot)
 	case IsolationOCIRootless:
 		moreCreateArgs := []string{"--no-new-keyring"}
 		if options.NoPivot {
 			moreCreateArgs = append(moreCreateArgs, "--no-pivot")
 		}
-		err = b.runUsingRuntimeSubproc(isolation, options, configureNetwork, networkString, moreCreateArgs, spec,
+		err = b.runUsingRuntimeSubproc(ctx, isolation, options, configureNetwork, networkString, moreCreateArgs, spec,
 			mountPoint, path, define.Package+"-"+filepath.Base(path), b.Container, hostsFile, resolvFile)
 	default:
 		err = errors.New("don't know how to run this command")
@@ -598,14 +604,20 @@ rootless=%d
 	return checkExitCodeError(err, options.ValidExitCodes)
 }
 
-func (b *Builder) setupOCIHooks(config *specs.Spec, hasVolumes bool) (map[string][]specs.Hook, error) {
+func (b *Builder) setupOCIHooks(ctx context.Context, config *specs.Spec, hasVolumes bool) (map[string][]specs.Hook, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	allHooks := make(map[string][]specs.Hook)
 	if len(b.CommonBuildOpts.OCIHooksDir) == 0 {
 		if unshare.IsRootless() {
 			return nil, nil
 		}
 		for _, hDir := range []string{hooks.DefaultDir, hooks.OverrideDir} {
-			manager, err := hooks.New(context.Background(), []string{hDir}, []string{})
+			manager, err := hooks.New(ctx, []string{hDir}, []string{})
 			if err != nil {
 				if errors.Is(err, os.ErrNotExist) {
 					continue
@@ -622,7 +634,7 @@ func (b *Builder) setupOCIHooks(config *specs.Spec, hasVolumes bool) (map[string
 			maps.Copy(allHooks, ociHooks)
 		}
 	} else {
-		manager, err := hooks.New(context.Background(), b.CommonBuildOpts.OCIHooksDir, []string{})
+		manager, err := hooks.New(ctx, b.CommonBuildOpts.OCIHooksDir, []string{})
 		if err != nil {
 			return nil, err
 		}
@@ -633,7 +645,7 @@ func (b *Builder) setupOCIHooks(config *specs.Spec, hasVolumes bool) (map[string
 		}
 	}
 
-	hookErr, err := hooksExec.RuntimeConfigFilter(context.Background(), allHooks["precreate"], config, hooksExec.DefaultPostKillTimeout) //nolint:staticcheck
+	hookErr, err := hooksExec.RuntimeConfigFilter(ctx, allHooks["precreate"], config, hooksExec.DefaultPostKillTimeout) //nolint:staticcheck
 	if err != nil {
 		logrus.Warnf("Container: precreate hook: %v", err)
 		if hookErr != nil && hookErr != err {

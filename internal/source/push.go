@@ -29,6 +29,12 @@ type PushOptions struct {
 // Push the source image at `sourcePath` to `imageInput` at a container
 // registry.
 func Push(ctx context.Context, sourcePath string, imageInput string, options PushOptions) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	srcRef, err := layout.ParseReference(sourcePath)
 	if err != nil {
 		return err

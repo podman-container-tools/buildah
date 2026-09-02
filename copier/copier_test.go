@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -26,7 +27,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tonistiigi/dchapes-mode"
+	mode "github.com/tonistiigi/dchapes-mode"
 	"go.podman.io/image/v5/types"
 	"go.podman.io/storage/pkg/idtools"
 	"go.podman.io/storage/pkg/reexec"
@@ -112,7 +113,9 @@ func makeArchive(headers []tar.Header, contents map[string][]byte) io.ReadCloser
 				}
 			}
 		}
-		tw.Close()
+		if err == nil {
+			err = tw.Close()
+		}
 		buffered.Flush()
 		if err != nil {
 			pipeWriter.CloseWithError(err)
@@ -130,12 +133,12 @@ func makeContextFromArchive(t *testing.T, archive io.ReadCloser, subdir string) 
 	tmp := t.TempDir()
 	uidMap := []idtools.IDMap{{HostID: os.Getuid(), ContainerID: 0, Size: 1}}
 	gidMap := []idtools.IDMap{{HostID: os.Getgid(), ContainerID: 0, Size: 1}}
-	err := Put(tmp, path.Join(tmp, subdir), PutOptions{UIDMap: uidMap, GIDMap: gidMap}, archive)
+	err := PutContext(t.Context(), tmp, path.Join(tmp, subdir), PutOptions{UIDMap: uidMap, GIDMap: gidMap}, archive)
 	archive.Close()
 	if err != nil {
 		return "", err
 	}
-	return tmp, err
+	return tmp, nil
 }
 
 // enumerateFiles walks a directory, returning the items it contains as a slice
@@ -424,14 +427,24 @@ var (
 	}
 )
 
-func TestPutNoChroot(t *testing.T) {
+func TestPutNoChrootNoCancel(t *testing.T) {
 	couldChroot := canChroot
 	canChroot = false
-	testPut(t)
+	testPut(t.Context(), t, nil)
 	canChroot = couldChroot
 }
 
-func testPut(t *testing.T) {
+func TestPutNoChrootCancel(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 1*time.Nanosecond)
+	defer cancel()
+	time.Sleep(1 * time.Millisecond)
+	couldChroot := canChroot
+	canChroot = false
+	testPut(ctx, t, context.DeadlineExceeded)
+	canChroot = couldChroot
+}
+
+func testPut(ctx context.Context, t *testing.T, expectedError error) {
 	uidMap := []idtools.IDMap{{HostID: os.Getuid(), ContainerID: 0, Size: 1}}
 	gidMap := []idtools.IDMap{{HostID: os.Getgid(), ContainerID: 0, Size: 1}}
 
@@ -492,7 +505,7 @@ func testPut(t *testing.T) {
 				if !reflect.DeepEqual(expected, fileList) && reflect.DeepEqual(moddedEnumeratedFiles(expected), moddedEnumeratedFiles(fileList)) {
 					logrus.Warn("chmod() lost some bits and possibly timestamps on symlinks, otherwise we match the source archive")
 				} else {
-					require.Equal(t, expected, fileList, "list of files in context directory for archive %q under topdir %q should match the archived used to populate it", testArchives[i].name, topdir)
+					require.Equalf(t, expected, fileList, "list of files in context directory for archive %q under topdir %q should match the archived used to populate it", testArchives[i].name, topdir)
 				}
 			})
 		}
@@ -506,7 +519,11 @@ func testPut(t *testing.T) {
 				tmp := t.TempDir()
 
 				archive := makeArchive(testArchives[i].headers, testArchives[i].contents)
-				err := Put(tmp, tmp, PutOptions{UIDMap: uidMap, GIDMap: gidMap, Rename: renames.renames}, archive)
+				err := PutContext(ctx, tmp, tmp, PutOptions{UIDMap: uidMap, GIDMap: gidMap, Rename: renames.renames}, archive)
+				if expectedError != nil {
+					require.ErrorContains(t, err, expectedError.Error())
+					return
+				}
 				require.NoErrorf(t, err, "error extracting archive %q to directory %q", testArchives[i].name, tmp)
 
 				var found []string
@@ -548,7 +565,11 @@ func testPut(t *testing.T) {
 					{Name: "test", Typeflag: typeFlag, Size: 0, Mode: 0o755, Linkname: "target", ModTime: testDate},
 				})
 				tmp := t.TempDir()
-				err := Put(tmp, tmp, PutOptions{UIDMap: uidMap, GIDMap: gidMap, NoOverwriteDirNonDir: !overwrite}, bytes.NewReader(archive))
+				err := PutContext(ctx, tmp, tmp, PutOptions{UIDMap: uidMap, GIDMap: gidMap, NoOverwriteDirNonDir: !overwrite}, bytes.NewReader(archive))
+				if expectedError != nil {
+					require.ErrorContains(t, err, expectedError.Error())
+					return
+				}
 				if overwrite {
 					if !errors.Is(err, syscall.EPERM) {
 						assert.Nilf(t, err, "expected to overwrite directory with type %c: %v", typeFlag, err)
@@ -574,7 +595,11 @@ func testPut(t *testing.T) {
 					{Name: "test/content", Typeflag: tar.TypeReg, Size: 0, Mode: 0o755, ModTime: testDate},
 				})
 				tmp := t.TempDir()
-				err := Put(tmp, tmp, PutOptions{UIDMap: uidMap, GIDMap: gidMap, NoOverwriteNonDirDir: !overwrite}, bytes.NewReader(archive))
+				err := PutContext(ctx, tmp, tmp, PutOptions{UIDMap: uidMap, GIDMap: gidMap, NoOverwriteNonDirDir: !overwrite}, bytes.NewReader(archive))
+				if expectedError != nil {
+					require.ErrorContains(t, err, expectedError.Error())
+					return
+				}
 				if overwrite {
 					if !errors.Is(err, syscall.EPERM) {
 						assert.Nilf(t, err, "expected to overwrite file with type %c: %v", typeFlag, err)
@@ -597,7 +622,11 @@ func testPut(t *testing.T) {
 					{Name: "unrelated", Typeflag: tar.TypeReg, Size: 0, Mode: 0o600, ModTime: testDate},
 				})
 				tmp := t.TempDir()
-				err := Put(tmp, tmp, PutOptions{UIDMap: uidMap, GIDMap: gidMap, IgnoreDevices: ignoreDevices}, bytes.NewReader(archive))
+				err := PutContext(ctx, tmp, tmp, PutOptions{UIDMap: uidMap, GIDMap: gidMap, IgnoreDevices: ignoreDevices}, bytes.NewReader(archive))
+				if expectedError != nil {
+					require.ErrorContains(t, err, expectedError.Error())
+					return
+				}
 				require.Nilf(t, err, "expected to extract content with typeflag %c without an error: %v", typeFlag, err)
 				fileList, err := enumerateFiles(tmp)
 				require.Nilf(t, err, "unexpected error scanning the contents of extraction directory for typeflag %c: %v", typeFlag, err)
@@ -626,13 +655,17 @@ func testPut(t *testing.T) {
 						StripSetgidBit: stripSetgidBit,
 						StripStickyBit: stripStickyBit,
 					}
-					err := Put(tmp, tmp, putOptions, bytes.NewReader(archive))
-					require.Nilf(t, err, "unexpected error writing sample file", err)
+					err := PutContext(ctx, tmp, tmp, putOptions, bytes.NewReader(archive))
+					if expectedError != nil {
+						require.ErrorContains(t, err, expectedError.Error())
+						return
+					}
+					require.Nil(t, err, "unexpected error writing sample file", err)
 					st, err := os.Stat(filepath.Join(tmp, "test"))
-					require.Nilf(t, err, "unexpected error checking permissions of file", err)
-					assert.Equalf(t, stripSetuidBit, st.Mode()&os.ModeSetuid == 0, "setuid bit was not set/stripped correctly")
-					assert.Equalf(t, stripSetgidBit, st.Mode()&os.ModeSetgid == 0, "setgid bit was not set/stripped correctly")
-					assert.Equalf(t, stripStickyBit, st.Mode()&os.ModeSticky == 0, "sticky bit was not set/stripped correctly")
+					require.Nil(t, err, "unexpected error checking permissions of file", err)
+					assert.Equal(t, stripSetuidBit, st.Mode()&os.ModeSetuid == 0, "setuid bit was not set/stripped correctly")
+					assert.Equal(t, stripSetgidBit, st.Mode()&os.ModeSetgid == 0, "setgid bit was not set/stripped correctly")
+					assert.Equal(t, stripStickyBit, st.Mode()&os.ModeSticky == 0, "sticky bit was not set/stripped correctly")
 				})
 			}
 		}
@@ -658,7 +691,7 @@ func isExpectedError(err error, inSubdir bool, name string, expectedErrors []exp
 	return false
 }
 
-func TestStatNoChroot(t *testing.T) {
+func TestStatNoChrootNoCancel(t *testing.T) {
 	couldChroot := canChroot
 	canChroot = false
 	testStat(t)
@@ -694,7 +727,7 @@ func testStat(t *testing.T) {
 							CheckForArchives: false,
 							Excludes:         excludes,
 						}
-						stats, err := Stat(root, topdir, options, []string{name})
+						stats, err := StatContext(t.Context(), root, topdir, options, []string{name})
 						require.NoErrorf(t, err, "error statting %q: %v", name, err)
 						for _, st := range stats {
 							// should not have gotten an error
@@ -704,8 +737,8 @@ func testStat(t *testing.T) {
 							matches := 0
 							for _, glob := range st.Globbed {
 								matches++
-								require.Equal(t, st.Glob, glob, "expected entry for %q", st.Glob)
-								require.NotNil(t, st.Results[glob], "%q globbed %q, but there are no results for it", st.Glob, glob)
+								require.Equalf(t, st.Glob, glob, "expected entry for %q", st.Glob)
+								require.NotNilf(t, st.Results[glob], "%q globbed %q, but there are no results for it", st.Glob, glob)
 								toStat := glob
 								if !absolute {
 									toStat = filepath.Join(root, topdir, name)
@@ -720,24 +753,24 @@ func testStat(t *testing.T) {
 										testItem.Size = int64(len(actualContent))
 									}
 									checkStatInfoOwnership(t, result)
-									require.Equal(t, testItem.Size, result.Size, "unexpected size difference for %q", name)
-									require.True(t, result.IsRegular, "expected %q.IsRegular to be true", glob)
-									require.False(t, result.IsDir, "expected %q.IsDir to be false", glob)
-									require.False(t, result.IsSymlink, "expected %q.IsSymlink to be false", glob)
+									require.Equalf(t, testItem.Size, result.Size, "unexpected size difference for %q", name)
+									require.Truef(t, result.IsRegular, "expected %q.IsRegular to be true", glob)
+									require.Falsef(t, result.IsDir, "expected %q.IsDir to be false", glob)
+									require.Falsef(t, result.IsSymlink, "expected %q.IsSymlink to be false", glob)
 								case tar.TypeDir:
-									require.False(t, result.IsRegular, "expected %q.IsRegular to be false", glob)
-									require.True(t, result.IsDir, "expected %q.IsDir to be true", glob)
-									require.False(t, result.IsSymlink, "expected %q.IsSymlink to be false", glob)
+									require.Falsef(t, result.IsRegular, "expected %q.IsRegular to be false", glob)
+									require.Truef(t, result.IsDir, "expected %q.IsDir to be true", glob)
+									require.Falsef(t, result.IsSymlink, "expected %q.IsSymlink to be false", glob)
 								case tar.TypeSymlink:
-									require.True(t, result.IsSymlink, "%q is supposed to be a symbolic link, but is not", name)
-									require.Equal(t, filepath.FromSlash(testItem.Linkname), result.ImmediateTarget, "%q is supposed to point to %q, but points to %q", glob, testItem.Linkname, result.ImmediateTarget)
+									require.Truef(t, result.IsSymlink, "%q is supposed to be a symbolic link, but is not", name)
+									require.Equalf(t, filepath.FromSlash(testItem.Linkname), result.ImmediateTarget, "%q is supposed to point to %q, but points to %q", glob, testItem.Linkname, result.ImmediateTarget)
 								case tar.TypeBlock, tar.TypeChar:
-									require.False(t, result.IsRegular, "%q is a regular file, but is not supposed to be", name)
-									require.False(t, result.IsDir, "%q is a directory, but is not supposed to be", name)
-									require.False(t, result.IsSymlink, "%q is not supposed to be a symbolic link, but appears to be one", name)
+									require.Falsef(t, result.IsRegular, "%q is a regular file, but is not supposed to be", name)
+									require.Falsef(t, result.IsDir, "%q is a directory, but is not supposed to be", name)
+									require.Falsef(t, result.IsSymlink, "%q is not supposed to be a symbolic link, but appears to be one", name)
 								}
 							}
-							require.Equal(t, 1, matches, "non-glob %q matched %d items, not exactly one", name, matches)
+							require.Equalf(t, 1, matches, "non-glob %q matched %d items, not exactly one", name, matches)
 						}
 					})
 				}
@@ -746,14 +779,24 @@ func testStat(t *testing.T) {
 	}
 }
 
-func TestGetSingleNoChroot(t *testing.T) {
+func TestGetSingleNoChrootNoCancel(t *testing.T) {
 	couldChroot := canChroot
 	canChroot = false
-	testGetSingle(t)
+	testGetSingle(t.Context(), t, nil)
 	canChroot = couldChroot
 }
 
-func testGetSingle(t *testing.T) {
+func TestGetSingleNoChrootCancel(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 1*time.Nanosecond)
+	defer cancel()
+	time.Sleep(1 * time.Millisecond)
+	couldChroot := canChroot
+	canChroot = false
+	testGetSingle(ctx, t, context.DeadlineExceeded)
+	canChroot = couldChroot
+}
+
+func testGetSingle(ctx context.Context, t *testing.T, expectedError error) {
 	for _, absolute := range []bool{false, true} {
 		for _, topdir := range []string{"", ".", "top"} {
 			for _, testArchive := range testArchives {
@@ -784,7 +827,11 @@ func testGetSingle(t *testing.T) {
 					}
 					t.Run(fmt.Sprintf("absolute=%t,topdir=%s,archive=%s,item=%s", absolute, topdir, testArchive.name, name), func(t *testing.T) {
 						// check if we can get this one item
-						err := Get(root, topdir, getOptions, []string{name}, io.Discard)
+						err := GetContext(ctx, root, topdir, getOptions, []string{name}, io.Discard)
+						if expectedError != nil {
+							require.ErrorContains(t, err, expectedError.Error())
+							return
+						}
 						// if we couldn't read that content, check if it's one of the expected failures
 						if err != nil && isExpectedError(err, topdir != "" && topdir != ".", testItem.Name, testArchive.expectedGetErrors) {
 							return
@@ -799,13 +846,16 @@ func testGetSingle(t *testing.T) {
 						var getErr error
 						var wg sync.WaitGroup
 						wg.Go(func() {
-							getErr = Get(root, topdir, getOptions, []string{name}, pipeWriter)
+							getErr = GetContext(ctx, root, topdir, getOptions, []string{name}, pipeWriter)
 							pipeWriter.Close()
 						})
 						tr := tar.NewReader(pipeReader)
 						hdr, err := tr.Next()
-						for err == nil {
-							assert.Equal(t, filepath.Base(name), filepath.FromSlash(hdr.Name), "expected item named %q, got %q", filepath.Base(name), filepath.FromSlash(hdr.Name))
+						for hdr != nil {
+							assert.Equalf(t, filepath.Base(name), filepath.FromSlash(hdr.Name), "expected item named %q, got %q", filepath.Base(name), filepath.FromSlash(hdr.Name))
+							if err != nil {
+								break
+							}
 							hdr, err = tr.Next()
 						}
 						assert.ErrorIs(t, err, io.EOF, "expected EOF at end of archive")
@@ -822,12 +872,12 @@ func testGetSingle(t *testing.T) {
 											getOptions.StripStickyBit = stripStickyBit
 											pipeReader, pipeWriter := io.Pipe()
 											wg.Go(func() {
-												getErr = Get(root, topdir, getOptions, []string{name}, pipeWriter)
+												getErr = GetContext(t.Context(), root, topdir, getOptions, []string{name}, pipeWriter)
 												pipeWriter.Close()
 											})
 											tr := tar.NewReader(pipeReader)
 											hdr, err := tr.Next()
-											for err == nil {
+											for hdr != nil {
 												expectedMode := testItem.Mode
 												modifier := ""
 												if stripSetuidBit {
@@ -845,7 +895,10 @@ func testGetSingle(t *testing.T) {
 												if expectedMode != hdr.Mode && expectedMode&testModeMask == hdr.Mode&testModeMask {
 													logrus.Warnf("chmod() lost some bits: expected 0%o, got 0%o", expectedMode, hdr.Mode)
 												} else {
-													assert.Equal(t, expectedMode, hdr.Mode, "expected item named %q %sto have mode 0%o, got 0%o", hdr.Name, modifier, expectedMode, hdr.Mode)
+													assert.Equalf(t, expectedMode, hdr.Mode, "expected item named %q %sto have mode 0%o, got 0%o", hdr.Name, modifier, expectedMode, hdr.Mode)
+												}
+												if err != nil {
+													break
 												}
 												hdr, err = tr.Next()
 											}
@@ -869,14 +922,24 @@ func testGetSingle(t *testing.T) {
 	}
 }
 
-func TestGetMultipleNoChroot(t *testing.T) {
+func TestGetMultipleNoChrootNoCancel(t *testing.T) {
 	couldChroot := canChroot
 	canChroot = false
-	testGetMultiple(t)
+	testGetMultiple(t.Context(), t, nil)
 	canChroot = couldChroot
 }
 
-func testGetMultiple(t *testing.T) {
+func TestGetMultipleNoChrootCancel(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 1*time.Nanosecond)
+	defer cancel()
+	time.Sleep(1 * time.Millisecond)
+	couldChroot := canChroot
+	canChroot = false
+	testGetMultiple(ctx, t, context.DeadlineExceeded)
+	canChroot = couldChroot
+}
+
+func testGetMultiple(ctx context.Context, t *testing.T, expectedGetError error) {
 	type getTestArchiveCase struct {
 		name               string
 		pattern            string
@@ -1592,7 +1655,7 @@ func testGetMultiple(t *testing.T) {
 
 				t.Run(fmt.Sprintf("topdir=%s,archive=%s,case=%s,pattern=%s", topdir, testArchive.name, testCase.name, testCase.pattern), func(t *testing.T) {
 					// ensure that we can get stuff using this spec
-					err := Get(root, topdir, getOptions, []string{testCase.pattern}, io.Discard)
+					err := GetContext(t.Context(), root, topdir, getOptions, []string{testCase.pattern}, io.Discard)
 					if err != nil && isExpectedError(err, topdir != "" && topdir != ".", testCase.pattern, testArchive.expectedGetErrors) {
 						return
 					}
@@ -1602,7 +1665,7 @@ func testGetMultiple(t *testing.T) {
 					var getErr error
 					var wg sync.WaitGroup
 					wg.Go(func() {
-						getErr = Get(root, topdir, getOptions, []string{testCase.pattern}, pipeWriter)
+						getErr = GetContext(ctx, root, topdir, getOptions, []string{testCase.pattern}, pipeWriter)
 						pipeWriter.Close()
 					})
 					tr := tar.NewReader(pipeReader)
@@ -1628,6 +1691,12 @@ func testGetMultiple(t *testing.T) {
 						hdr, err = tr.Next()
 					}
 					pipeReader.Close()
+					wg.Wait()
+					if expectedGetError != nil {
+						require.ErrorContains(t, getErr, expectedGetError.Error())
+						require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+						return
+					}
 					sort.Strings(actualContents)
 					// compare it to what we were supposed to get
 					expectedContents := make([]string, 0, len(testCase.items))
@@ -1636,9 +1705,8 @@ func testGetMultiple(t *testing.T) {
 					}
 					sort.Strings(expectedContents)
 					assert.ErrorIs(t, err, io.EOF, "expected EOF at end of archive")
-					wg.Wait()
 					assert.NoErrorf(t, getErr, "unexpected error from Get(%q)", testCase.pattern)
-					assert.Equal(t, expectedContents, actualContents, "Get(%q,excludes=%v) didn't produce the right set of items", testCase.pattern, excludes)
+					assert.Equalf(t, expectedContents, actualContents, "Get(%q,excludes=%v) didn't produce the right set of items", testCase.pattern, excludes)
 
 					expectedSymlinks := testCase.expectedSymlinks
 					if expectedSymlinks == nil {
@@ -1651,7 +1719,7 @@ func testGetMultiple(t *testing.T) {
 	}
 }
 
-func TestEvalNoChroot(t *testing.T) {
+func TestEvalNoChrootNoCancel(t *testing.T) {
 	couldChroot := canChroot
 	canChroot = false
 	testEval(t)
@@ -1698,14 +1766,14 @@ func testEval(t *testing.T) {
 				err = os.Symlink(vector.linkTarget, linkname)
 			}
 			require.NoErrorf(t, err, "error creating link from %q to %q", linkname, vector.linkTarget)
-			evaluated, err := Eval(tmp, filepath.Join(tmp, vector.inputPath), options)
+			evaluated, err := EvalContext(t.Context(), tmp, filepath.Join(tmp, vector.inputPath), options)
 			require.NoErrorf(t, err, "error evaluating %q: %v", vector.inputPath, err)
 			require.Equalf(t, filepath.Join(tmp, vector.evaluatedPath), evaluated, "evaluation of %q with %q pointing to %q failed", vector.inputPath, linkname, vector.linkTarget)
 		})
 	}
 }
 
-func TestMkdirNoChroot(t *testing.T) {
+func TestMkdirNoChrootNoCancel(t *testing.T) {
 	couldChroot := canChroot
 	canChroot = false
 	testMkdir(t)
@@ -1861,7 +1929,7 @@ func testMkdir(t *testing.T) {
 						return nil
 					})
 					require.NoErrorf(t, err, "error walking directory to catalog pre-Mkdir contents: %v", err)
-					err = Mkdir(root, testCase.create, options)
+					err = MkdirContext(t.Context(), root, testCase.create, options)
 					if testCase.fail {
 						require.Errorf(t, err, "expected error creating directory %q under %q with Mkdir", testCase.create, root)
 						return
@@ -1892,7 +1960,7 @@ func testMkdir(t *testing.T) {
 	}
 }
 
-func TestMkfileNoChroot(t *testing.T) {
+func TestMkfileNoChrootNoCancel(t *testing.T) {
 	couldChroot := canChroot
 	canChroot = false
 	testMkfile(t)
@@ -2024,7 +2092,7 @@ func TestCleanerSubdirectory(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(testCase[0], func(t *testing.T) {
 			cleaner := cleanerReldirectory(filepath.FromSlash(testCase[0]))
-			assert.Equal(t, testCase[1], filepath.ToSlash(cleaner), "expected to get %q, got %q", testCase[1], cleaner)
+			assert.Equalf(t, testCase[1], filepath.ToSlash(cleaner), "expected to get %q, got %q", testCase[1], cleaner)
 		})
 	}
 }
@@ -2048,12 +2116,12 @@ func TestHandleRename(t *testing.T) {
 	for i, testCase := range testCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			renamed := handleRename(renames, testCase[0])
-			assert.Equal(t, testCase[1], renamed, "expected to get %q, got %q", testCase[1], renamed)
+			assert.Equalf(t, testCase[1], renamed, "expected to get %q, got %q", testCase[1], renamed)
 		})
 	}
 }
 
-func TestRemoveNoChroot(t *testing.T) {
+func TestRemoveNoChrootNoCancel(t *testing.T) {
 	couldChroot := canChroot
 	canChroot = false
 	testRemove(t)
@@ -2299,7 +2367,7 @@ func testRemove(t *testing.T) {
 						return nil
 					})
 					require.NoErrorf(t, err, "error walking directory to catalog pre-Remove contents: %v", err)
-					err = Remove(root, testCase.remove, options)
+					err = RemoveContext(t.Context(), root, testCase.remove, options)
 					if testCase.fail {
 						require.Errorf(t, err, "did not expect to succeed removing item %q under %q with Remove", testCase.remove, root)
 						return
@@ -2358,7 +2426,7 @@ func TestExtendedGlob(t *testing.T) {
 	expected2 = append(expected2, filepath.Join(tmpdir, "d", "d.dat"))
 	matched, err := extendedGlob(filepath.Join(tmpdir, "**", "*.dat"))
 	require.NoError(t, err, "globbing")
-	require.ElementsMatchf(t, expected1, matched, "**/*.dat")
+	require.ElementsMatch(t, expected1, matched, "**/*.dat")
 	matched, err = extendedGlob(filepath.Join(tmpdir, "**", "d", "*.dat"))
 	require.NoError(t, err, "globbing")
 	require.ElementsMatch(t, expected2, matched, "**/d/*.dat")
@@ -2499,14 +2567,14 @@ func testEnsure(t *testing.T) {
 			testStarted := time.Now()
 			tmpdir := t.TempDir()
 			for _, mkdir := range testCases[i].mkdirs {
-				err := Mkdir(tmpdir, mkdir, MkdirOptions{
+				err := MkdirContext(t.Context(), tmpdir, mkdir, MkdirOptions{
 					ModTimeNew: &zero,
 					ChmodNew:   &ugReadable,
 					ChownNew:   &idtools.IDPair{UID: 1, GID: 1},
 				})
 				require.NoError(t, err, "unexpected error ensuring")
 			}
-			created, noted, err := Ensure(tmpdir, testCases[i].subdir, testCases[i].options)
+			created, noted, err := EnsureContext(t.Context(), tmpdir, testCases[i].subdir, testCases[i].options)
 			require.NoError(t, err, "unexpected error ensuring")
 			require.EqualValues(t, testCases[i].expectCreated, created, "did not expect to create these")
 			require.Equal(t, len(testCases[i].expectNoted), len(noted), "noticed the wrong number of things")
@@ -2525,7 +2593,7 @@ func testEnsure(t *testing.T) {
 			for _, item := range testCases[i].options.Paths {
 				target := filepath.Join(tmpdir, testCases[i].subdir, item.Path)
 				st, err := os.Stat(target)
-				require.NoError(t, err, "we supposedly created %q", item.Path)
+				require.NoErrorf(t, err, "we supposedly created %q", item.Path)
 				if item.Chmod != nil {
 					assert.Equalf(t, *item.Chmod, st.Mode().Perm(), "permissions look wrong on %q", item.Path)
 				}
@@ -2538,7 +2606,7 @@ func testEnsure(t *testing.T) {
 				if item.ModTime != nil {
 					assert.Equalf(t, item.ModTime.Unix(), st.ModTime().Unix(), "datestamp looks wrong on %q", item.Path)
 				} else {
-					assert.True(t, !testStarted.After(st.ModTime()), "datestamp is too old on %q: %v < %v", st.ModTime(), testStarted)
+					assert.Truef(t, !testStarted.After(st.ModTime()), "datestamp is too old on %q: %v < %v", target, st.ModTime(), testStarted)
 				}
 			}
 		})
@@ -2563,7 +2631,7 @@ func testStatDisallowWildcard(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("wildcard-allowed-glob-matches", func(t *testing.T) {
-		stats, err := Stat(dir, dir, StatOptions{}, []string{"file-*"})
+		stats, err := StatContext(t.Context(), dir, dir, StatOptions{}, []string{"file-*"})
 		require.NoError(t, err)
 		require.Len(t, stats, 1)
 		require.Empty(t, stats[0].Error)
@@ -2571,7 +2639,7 @@ func testStatDisallowWildcard(t *testing.T) {
 	})
 
 	t.Run("disallow-wildcard-literal", func(t *testing.T) {
-		stats, err := Stat(dir, dir, StatOptions{DisallowWildcard: true}, []string{"file-a"})
+		stats, err := StatContext(t.Context(), dir, dir, StatOptions{DisallowWildcard: true}, []string{"file-a"})
 		require.NoError(t, err)
 		require.Len(t, stats, 1)
 		require.Empty(t, stats[0].Error)
@@ -2579,7 +2647,7 @@ func testStatDisallowWildcard(t *testing.T) {
 	})
 
 	t.Run("disallow-wildcard-glob-chars-rejected", func(t *testing.T) {
-		stats, err := Stat(dir, dir, StatOptions{DisallowWildcard: true}, []string{"file-*"})
+		stats, err := StatContext(t.Context(), dir, dir, StatOptions{DisallowWildcard: true}, []string{"file-*"})
 		require.NoError(t, err)
 		require.Len(t, stats, 1)
 		require.NotEmpty(t, stats[0].Error, "file-* should be rejected when DisallowWildcard is true")
@@ -2587,7 +2655,7 @@ func testStatDisallowWildcard(t *testing.T) {
 	})
 }
 
-func TestStatAllowEmptyWildcardNoChroot(t *testing.T) {
+func TestStatAllowEmptyWildcardNoChrootNoCancel(t *testing.T) {
 	couldChroot := canChroot
 	canChroot = false
 	testStatAllowEmptyWildcard(t)
@@ -2602,20 +2670,20 @@ func testStatAllowEmptyWildcard(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("empty-wildcard-true-no-error", func(t *testing.T) {
-		stats, err := Stat(dir, dir, StatOptions{AllowEmptyWildcard: true}, []string{"nonexistent-*"})
+		stats, err := StatContext(t.Context(), dir, dir, StatOptions{AllowEmptyWildcard: true}, []string{"nonexistent-*"})
 		require.NoError(t, err)
 		require.Empty(t, stats)
 	})
 
 	t.Run("empty-wildcard-false-error", func(t *testing.T) {
-		stats, err := Stat(dir, dir, StatOptions{}, []string{"nonexistent-*"})
+		stats, err := StatContext(t.Context(), dir, dir, StatOptions{}, []string{"nonexistent-*"})
 		require.NoError(t, err)
 		require.Len(t, stats, 1)
 		require.Contains(t, stats[0].Error, "matched nothing")
 	})
 
 	t.Run("empty-wildcard-true-with-existing", func(t *testing.T) {
-		stats, err := Stat(dir, dir, StatOptions{AllowEmptyWildcard: true}, []string{"file-*"})
+		stats, err := StatContext(t.Context(), dir, dir, StatOptions{AllowEmptyWildcard: true}, []string{"file-*"})
 		require.NoError(t, err)
 		require.Len(t, stats, 1)
 		require.Empty(t, stats[0].Error)
@@ -2623,14 +2691,14 @@ func testStatAllowEmptyWildcard(t *testing.T) {
 	})
 
 	t.Run("empty-wildcard-true-literal-missing", func(t *testing.T) {
-		stats, err := Stat(dir, dir, StatOptions{AllowEmptyWildcard: true}, []string{"nonexistent-file"})
+		stats, err := StatContext(t.Context(), dir, dir, StatOptions{AllowEmptyWildcard: true}, []string{"nonexistent-file"})
 		require.NoError(t, err)
 		require.Len(t, stats, 1)
 		require.Contains(t, stats[0].Error, "no such file or directory")
 	})
 }
 
-func TestGetDisallowWildcardNoChroot(t *testing.T) {
+func TestGetDisallowWildcardNoChrootNoCancel(t *testing.T) {
 	couldChroot := canChroot
 	canChroot = false
 	testGetDisallowWildcard(t)
@@ -2646,17 +2714,17 @@ func testGetDisallowWildcard(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("wildcard-allowed-glob-matches", func(t *testing.T) {
-		err := Get(dir, dir, GetOptions{}, []string{"file-*"}, io.Discard)
+		err := GetContext(t.Context(), dir, dir, GetOptions{}, []string{"file-*"}, io.Discard)
 		require.NoError(t, err)
 	})
 
 	t.Run("disallow-wildcard-literal", func(t *testing.T) {
-		err := Get(dir, dir, GetOptions{DisallowWildcard: true}, []string{"file-a"}, io.Discard)
+		err := GetContext(t.Context(), dir, dir, GetOptions{DisallowWildcard: true}, []string{"file-a"}, io.Discard)
 		require.NoError(t, err)
 	})
 
 	t.Run("disallow-wildcard-glob-chars-rejected", func(t *testing.T) {
-		err := Get(dir, dir, GetOptions{DisallowWildcard: true}, []string{"file-*"}, io.Discard)
+		err := GetContext(t.Context(), dir, dir, GetOptions{DisallowWildcard: true}, []string{"file-*"}, io.Discard)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "wildcards are not allowed")
 	})
@@ -2677,29 +2745,29 @@ func testGetAllowEmptyWildcard(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("empty-wildcard-true-no-error", func(t *testing.T) {
-		err := Get(dir, dir, GetOptions{AllowEmptyWildcard: true}, []string{"nonexistent-*"}, io.Discard)
+		err := GetContext(t.Context(), dir, dir, GetOptions{AllowEmptyWildcard: true}, []string{"nonexistent-*"}, io.Discard)
 		require.NoError(t, err)
 	})
 
 	t.Run("empty-wildcard-false-error", func(t *testing.T) {
-		err := Get(dir, dir, GetOptions{}, []string{"nonexistent-*"}, io.Discard)
+		err := GetContext(t.Context(), dir, dir, GetOptions{}, []string{"nonexistent-*"}, io.Discard)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "matched nothing")
 	})
 
 	t.Run("empty-wildcard-true-literal-missing", func(t *testing.T) {
-		err := Get(dir, dir, GetOptions{AllowEmptyWildcard: true}, []string{"nonexistent-file"}, io.Discard)
+		err := GetContext(t.Context(), dir, dir, GetOptions{AllowEmptyWildcard: true}, []string{"nonexistent-file"}, io.Discard)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no such file or directory")
 	})
 
 	t.Run("empty-wildcard-true-with-existing", func(t *testing.T) {
-		err := Get(dir, dir, GetOptions{AllowEmptyWildcard: true}, []string{"file-*"}, io.Discard)
+		err := GetContext(t.Context(), dir, dir, GetOptions{AllowEmptyWildcard: true}, []string{"file-*"}, io.Discard)
 		require.NoError(t, err)
 	})
 }
 
-func TestEnsureNoChroot(t *testing.T) {
+func TestEnsureNoChrootNoCancel(t *testing.T) {
 	couldChroot := canChroot
 	canChroot = false
 	testEnsure(t)
@@ -2856,7 +2924,7 @@ func testConditionalRemove(t *testing.T) {
 					Chmod:    what.mode,
 				})
 			}
-			created, _, err := Ensure(tmpdir, testCases[i].subdir, create)
+			created, _, err := EnsureContext(t.Context(), tmpdir, testCases[i].subdir, create)
 			require.NoErrorf(t, err, "unexpected error creating %#v", create)
 			remove := testCases[i].remove
 			for _, what := range created {
@@ -2864,7 +2932,7 @@ func testConditionalRemove(t *testing.T) {
 					Path: what,
 				})
 			}
-			removed, err := ConditionalRemove(tmpdir, testCases[i].subdir, testCases[i].remove)
+			removed, err := ConditionalRemoveContext(t.Context(), tmpdir, testCases[i].subdir, testCases[i].remove)
 			require.NoError(t, err, "unexpected error removing")
 			expectedRemoved := slices.Clone(testCases[i].expectedRemoved)
 			slices.Sort(expectedRemoved)
@@ -2893,7 +2961,7 @@ func testConditionalRemove(t *testing.T) {
 	}
 }
 
-func TestConditionalRemoveNoChroot(t *testing.T) {
+func TestConditionalRemoveNoChrootNoCancel(t *testing.T) {
 	couldChroot := canChroot
 	canChroot = false
 	testConditionalRemove(t)
@@ -2915,14 +2983,24 @@ func TestSortedExtendedGlob(t *testing.T) {
 	require.ElementsMatch(t, expect, matched, "sorted globbing")
 }
 
-func TestTarPutNoChroot(t *testing.T) {
+func TestTarPutNoChrootNoCancel(t *testing.T) {
 	couldChroot := canChroot
 	canChroot = false
 	defer func() { canChroot = couldChroot }()
-	testTarPut(t)
+	testTarPut(t.Context(), t, nil)
 }
 
-func testTarPut(t *testing.T) {
+func TestTarPutNoChrootCancel(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 1*time.Nanosecond)
+	defer cancel()
+	time.Sleep(1 * time.Millisecond)
+	couldChroot := canChroot
+	canChroot = false
+	defer func() { canChroot = couldChroot }()
+	testTarPut(ctx, t, context.DeadlineExceeded)
+}
+
+func testTarPut(ctx context.Context, t *testing.T, expectedError error) {
 	testCases := []struct {
 		name               string
 		trailingNullsBytes int
@@ -2968,7 +3046,11 @@ func testTarPut(t *testing.T) {
 				tarBuf.Write(extraNulls)
 			}
 
-			err = Put(testDir, testDir, PutOptions{}, &tarBuf)
+			err = PutContext(ctx, testDir, testDir, PutOptions{}, &tarBuf)
+			if expectedError != nil {
+				require.ErrorContains(t, err, expectedError.Error())
+				return
+			}
 			require.NoError(t, err, "Put returned error")
 
 			extractedFile := filepath.Join(testDir, "testfile.txt")
@@ -2998,7 +3080,7 @@ func TestCannotChangeMultipleRequestsWithDifferentChroot(t *testing.T) {
 
 	stderr := bytes.Buffer{}
 
-	cmd := reexec.Command(copierCommand)
+	cmd := reexec.CommandContext(t.Context(), copierCommand)
 	cmd.Stdin = stdinR
 	cmd.Stdout = stdoutW
 	cmd.Stderr = &stderr
@@ -3024,17 +3106,17 @@ func TestCannotChangeMultipleRequestsWithDifferentChroot(t *testing.T) {
 
 	require.NoError(t, encoder.Encode(&req), "failed to send first request to copier")
 	resp := receiveResponse()
-	require.Empty(t, resp.Error, "first request returned an error: %s", resp.Error)
+	require.Emptyf(t, resp.Error, "first request returned an error: %s", resp.Error)
 
 	require.NoError(t, encoder.Encode(&req), "failed to send second request to copier")
 	resp = receiveResponse()
-	require.Empty(t, resp.Error, "second request returned an error: %s", resp.Error)
+	require.Emptyf(t, resp.Error, "second request returned an error: %s", resp.Error)
 
 	require.NoError(t, encoder.Encode(&request{Request: requestQuit}))
 	require.NoError(t, cmd.Wait())
 }
 
-func TestChmodNoChroot(t *testing.T) {
+func TestChmodNoChrootNoCancel(t *testing.T) {
 	couldChroot := canChroot
 	canChroot = false
 	testChmod(t)
@@ -3092,21 +3174,26 @@ func testChmod(t *testing.T) {
 			var wg sync.WaitGroup
 			wg.Go(func() {
 				opts := GetOptions{Chmod: v.chmod, ChmodDirs: v.chmodDirs, ChmodFiles: v.chmodFiles}
-				err = Get(testDir, "", opts, []string{name}, pipeWriter)
+				err = GetContext(t.Context(), testDir, "", opts, []string{name}, pipeWriter)
 				pipeWriter.Close()
 			})
 			tr := tar.NewReader(pipeReader)
 			hdr, tarErr := tr.Next()
-			for tarErr == nil {
+			for hdr != nil {
 				assert.Equal(t, int64(v.endMode), hdr.Mode)
+				if tarErr != nil {
+					break
+				}
 				hdr, tarErr = tr.Next()
 			}
-			assert.ErrorIs(t, tarErr, io.EOF, "expected EOF at end of archive")
 			wg.Wait()
+			pipeReader.Close()
 			if v.err != nil {
 				require.ErrorContains(t, err, v.err.Error())
+				require.ErrorIs(t, tarErr, io.ErrUnexpectedEOF, "expected trash at end of archive")
+			} else {
+				require.ErrorIs(t, tarErr, io.EOF, "expected EOF at end of archive")
 			}
-			pipeReader.Close()
 		})
 
 		t.Run(fmt.Sprintf("put chmod=%v,chmodDirs=%v,chmodFiles=%v,startMode=%O,endMode=%O,isDir=%v", v.chmod, v.chmodDirs, v.chmodFiles, v.startMode, v.endMode, v.isDir), func(t *testing.T) {
@@ -3125,7 +3212,7 @@ func testChmod(t *testing.T) {
 				ChmodDirs:  v.chmodDirs,
 				ChmodFiles: v.chmodFiles,
 			}
-			err := Put(testDir, "", opts, bytes.NewReader(archive))
+			err := PutContext(t.Context(), testDir, "", opts, bytes.NewReader(archive))
 			if err != nil {
 				require.ErrorContains(t, err, v.err.Error())
 				return
@@ -3141,7 +3228,7 @@ func testChmod(t *testing.T) {
 	}
 }
 
-func TestPutTimestampNoChroot(t *testing.T) {
+func TestPutTimestampNoChrootNoCancel(t *testing.T) {
 	couldChroot := canChroot
 	canChroot = false
 	defer func() { canChroot = couldChroot }()
@@ -3160,13 +3247,13 @@ func testPutTimestamp(t *testing.T) {
 			{Name: "subdir/", Typeflag: tar.TypeDir, Mode: 0o755, ModTime: originalTime},
 			{Name: "subdir/file.txt", Typeflag: tar.TypeReg, Size: 3, Mode: 0o644, ModTime: originalTime},
 		}, map[string][]byte{"subdir/file.txt": []byte("abc")})
-		err := Put(root, root, PutOptions{UIDMap: uidMap, GIDMap: gidMap, Timestamp: &override}, archive)
+		err := PutContext(t.Context(), root, root, PutOptions{UIDMap: uidMap, GIDMap: gidMap, Timestamp: &override}, archive)
 		require.NoError(t, err)
 
 		for _, name := range []string{"subdir", "subdir/file.txt"} {
 			info, err := os.Lstat(filepath.Join(root, name))
 			require.NoError(t, err)
-			assert.Equal(t, override.Unix(), info.ModTime().Unix(), "%q should have overridden timestamp", name)
+			assert.Equalf(t, override.Unix(), info.ModTime().Unix(), "%q should have overridden timestamp", name)
 		}
 	})
 
@@ -3176,13 +3263,13 @@ func testPutTimestamp(t *testing.T) {
 		archive := makeArchive([]tar.Header{
 			{Name: "a/b/file.txt", Typeflag: tar.TypeReg, Size: 2, Mode: 0o644, ModTime: originalTime},
 		}, map[string][]byte{"a/b/file.txt": []byte("hi")})
-		err := Put(root, target, PutOptions{UIDMap: uidMap, GIDMap: gidMap, Timestamp: &override}, archive)
+		err := PutContext(t.Context(), root, target, PutOptions{UIDMap: uidMap, GIDMap: gidMap, Timestamp: &override}, archive)
 		require.NoError(t, err)
 
 		for _, name := range []string{"dest", "dest/nested", "dest/nested/a", "dest/nested/a/b", "dest/nested/a/b/file.txt"} {
 			info, err := os.Lstat(filepath.Join(root, name))
 			require.NoError(t, err)
-			assert.Equal(t, override.Unix(), info.ModTime().Unix(), "%q should have overridden timestamp", name)
+			assert.Equalf(t, override.Unix(), info.ModTime().Unix(), "%q should have overridden timestamp", name)
 		}
 	})
 
@@ -3191,7 +3278,7 @@ func testPutTimestamp(t *testing.T) {
 		archive := makeArchive([]tar.Header{
 			{Name: "file.txt", Typeflag: tar.TypeReg, Size: 5, Mode: 0o644, ModTime: originalTime},
 		}, map[string][]byte{"file.txt": []byte("hello")})
-		err := Put(root, root, PutOptions{UIDMap: uidMap, GIDMap: gidMap}, archive)
+		err := PutContext(t.Context(), root, root, PutOptions{UIDMap: uidMap, GIDMap: gidMap}, archive)
 		require.NoError(t, err)
 
 		info, err := os.Lstat(filepath.Join(root, "file.txt"))
@@ -3238,7 +3325,7 @@ func testPutCreateDestPath(t *testing.T) {
 			}
 
 			opts := PutOptions{UIDMap: uidMap, GIDMap: gidMap, CreateDestPath: tc.createDestPath}
-			err := Put(root, dest, opts, archive())
+			err := PutContext(t.Context(), root, dest, opts, archive())
 
 			if tc.fail {
 				require.ErrorContains(t, err, "does not exist and CreateDestPath is false",
@@ -3275,7 +3362,7 @@ func testSymlink(t *testing.T) {
 
 	t.Run("basic", func(t *testing.T) {
 		root := t.TempDir()
-		err := Symlink(root, "target", "newlink", symlinkOpts(nil))
+		err := SymlinkContext(t.Context(), root, "target", "newlink", symlinkOpts(nil))
 		require.NoError(t, err)
 
 		info, err := os.Lstat(filepath.Join(root, "newlink"))
@@ -3289,7 +3376,7 @@ func testSymlink(t *testing.T) {
 
 	t.Run("with-timestamp", func(t *testing.T) {
 		root := t.TempDir()
-		err := Symlink(root, "target", "dated", symlinkOpts(&testDate))
+		err := SymlinkContext(t.Context(), root, "target", "dated", symlinkOpts(&testDate))
 		require.NoError(t, err)
 
 		info, err := os.Lstat(filepath.Join(root, "dated"))
@@ -3309,7 +3396,7 @@ func testSymlink(t *testing.T) {
 		root, err := makeContextFromArchive(t, archive, "")
 		require.NoError(t, err)
 
-		err = Symlink(root, "target", "subdir-a/subdir-b/deeplink", symlinkOpts(nil))
+		err = SymlinkContext(t.Context(), root, "target", "subdir-a/subdir-b/deeplink", symlinkOpts(nil))
 		require.NoError(t, err)
 
 		got, err := os.Readlink(filepath.Join(root, "subdir-a", "subdir-b", "deeplink"))
@@ -3319,7 +3406,7 @@ func testSymlink(t *testing.T) {
 
 	t.Run("path-traversal", func(t *testing.T) {
 		root := t.TempDir()
-		err := Symlink(root, "target", "../../escaped", symlinkOpts(nil))
+		err := SymlinkContext(t.Context(), root, "target", "../../escaped", symlinkOpts(nil))
 		require.NoError(t, err)
 
 		got, err := os.Readlink(filepath.Join(root, "escaped"))
@@ -3329,7 +3416,7 @@ func testSymlink(t *testing.T) {
 
 	t.Run("absolute-path", func(t *testing.T) {
 		root := t.TempDir()
-		err := Symlink(root, "target", "/absolutelink", symlinkOpts(nil))
+		err := SymlinkContext(t.Context(), root, "target", "/absolutelink", symlinkOpts(nil))
 		require.NoError(t, err)
 
 		got, err := os.Readlink(filepath.Join(root, "absolutelink"))
@@ -3339,10 +3426,10 @@ func testSymlink(t *testing.T) {
 
 	t.Run("overwrite", func(t *testing.T) {
 		root := t.TempDir()
-		err := Symlink(root, "original-target", "link", symlinkOpts(nil))
+		err := SymlinkContext(t.Context(), root, "original-target", "link", symlinkOpts(nil))
 		require.NoError(t, err)
 
-		err = Symlink(root, "new-target", "link", symlinkOpts(nil))
+		err = SymlinkContext(t.Context(), root, "new-target", "link", symlinkOpts(nil))
 		require.NoError(t, err)
 
 		got, err := os.Readlink(filepath.Join(root, "link"))

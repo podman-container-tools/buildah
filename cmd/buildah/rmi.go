@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
@@ -89,7 +88,7 @@ func rmiCmd(c *cobra.Command, args []string, iopts rmiOptions) error {
 	}
 	options.Force = iopts.force
 
-	rmiReports, rmiErrors := runtime.RemoveImages(context.Background(), args, options)
+	rmiReports, rmiErrors := runtime.RemoveImages(getContext(), args, options)
 	for _, r := range rmiReports {
 		for _, u := range r.Untagged {
 			fmt.Printf("untagged: %s\n", u)

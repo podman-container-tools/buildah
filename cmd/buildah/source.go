@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-
 	"github.com/spf13/cobra"
 	"go.podman.io/buildah/internal/source"
 )
@@ -35,7 +33,7 @@ var (
 		Long:    sourceCreateDescription,
 		Example: "buildah source create /tmp/fedora:latest-source",
 		RunE: func(_ *cobra.Command, args []string) error {
-			return source.Create(context.Background(), args[0], sourceCreateOptions)
+			return source.Create(getContext(), args[0], sourceCreateOptions)
 		},
 	}
 
@@ -52,7 +50,7 @@ var (
 		Long:    sourceAddDescription,
 		Example: "buildah source add /tmp/fedora sources.tar.gz",
 		RunE: func(_ *cobra.Command, args []string) error {
-			return source.Add(context.Background(), args[0], args[1], sourceAddOptions)
+			return source.Add(getContext(), args[0], args[1], sourceAddOptions)
 		},
 	}
 
@@ -69,7 +67,7 @@ var (
 		Long:    sourcePullDescription,
 		Example: "buildah source pull quay.io/sourceimage/example:latest /tmp/sourceimage:latest",
 		RunE: func(_ *cobra.Command, args []string) error {
-			return source.Pull(context.Background(), args[0], args[1], sourcePullOptions)
+			return source.Pull(getContext(), args[0], args[1], sourcePullOptions)
 		},
 	}
 
@@ -86,7 +84,7 @@ var (
 		Long:    sourcePushDescription,
 		Example: "buildah source push /tmp/sourceimage:latest quay.io/sourceimage/example:latest",
 		RunE: func(_ *cobra.Command, args []string) error {
-			return source.Push(context.Background(), args[0], args[1], sourcePushOptions)
+			return source.Push(getContext(), args[0], args[1], sourcePushOptions)
 		},
 	}
 )

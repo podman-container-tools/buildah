@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -133,7 +132,7 @@ func imagesCmd(c *cobra.Command, args []string, iopts *imageResults) error {
 		return err
 	}
 
-	ctx := context.Background()
+	ctx := getContext()
 
 	options := &libimage.ListImagesOptions{}
 	if len(iopts.filter) > 0 {

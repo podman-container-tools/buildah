@@ -227,7 +227,7 @@ func runCmd(c *cobra.Command, args []string, iopts runInputOptions) error {
 	options.Mounts = mounts
 	options.CgroupManager = globalFlagResults.CgroupManager
 
-	runerr := builder.Run(args, options)
+	runerr := builder.RunContext(getContext(), args, options)
 
 	if runerr != nil {
 		logrus.Debugf("error running %v in container %q: %v", args, builder.Container, runerr)

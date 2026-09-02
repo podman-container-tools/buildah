@@ -322,7 +322,7 @@ func addAndCopyCmd(c *cobra.Command, args []string, verb string, iopts addCopyRe
 	}
 
 	extractLocalArchives := verb == "ADD"
-	err = builder.Add(dest, extractLocalArchives, options, args...)
+	err = builder.AddContext(getContext(), dest, extractLocalArchives, options, args...)
 	if err != nil {
 		return fmt.Errorf("adding content to container %q: %w", builder.Container, err)
 	}

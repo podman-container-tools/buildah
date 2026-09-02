@@ -56,7 +56,7 @@ func TestXattrs(t *testing.T) {
 	for attribute, value := range testValues {
 		t.Run(fmt.Sprintf("attribute=%s", attribute), func(t *testing.T) {
 			f, err := os.CreateTemp(tmp, "copier-xattr-test-")
-			if !assert.Nil(t, err, "error creating test file: %v", err) {
+			if !assert.Nilf(t, err, "error creating test file: %v", err) {
 				t.FailNow()
 			}
 			defer os.Remove(f.Name())
@@ -65,19 +65,19 @@ func TestXattrs(t *testing.T) {
 			if errors.Is(err, syscall.ENOTSUP) {
 				t.Skipf("extended attributes not supported on %q, skipping", tmp)
 			}
-			if !assert.Nil(t, err, "error setting attribute on file: %v", err) {
+			if !assert.Nilf(t, err, "error setting attribute on file: %v", err) {
 				t.FailNow()
 			}
 
 			xattrs, err := Lgetxattrs(f.Name())
-			if !assert.Nil(t, err, "error reading attributes of file: %v", err) {
+			if !assert.Nilf(t, err, "error reading attributes of file: %v", err) {
 				t.FailNow()
 			}
 			xvalue, ok := xattrs[attribute]
-			if !assert.True(t, ok, "did not read back attribute %q for file", attribute) {
+			if !assert.Truef(t, ok, "did not read back attribute %q for file", attribute) {
 				t.FailNow()
 			}
-			if !assert.Equal(t, value, xvalue, "read back different value for attribute %q", attribute) {
+			if !assert.Equalf(t, value, xvalue, "read back different value for attribute %q", attribute) {
 				t.FailNow()
 			}
 		})

@@ -198,7 +198,7 @@ func testConformanceInternal(t *testing.T, dateStamp string, testIndex int, muta
 	if mutate != nil {
 		mutate(&test)
 	}
-	ctx := context.TODO()
+	ctx := t.Context()
 
 	cwd, err := os.Getwd()
 	require.NoError(t, err, "error finding current directory")
@@ -234,15 +234,15 @@ func testConformanceInternal(t *testing.T, dateStamp string, testIndex int, muta
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		if test.contextDir != "" {
-			getErr = copier.Get("", testDataDir, copier.GetOptions{}, []string{test.contextDir}, pipeWriter)
+			getErr = copier.GetContext(t.Context(), "", testDataDir, copier.GetOptions{}, []string{test.contextDir}, pipeWriter)
 		} else if test.dockerfile != "" {
-			getErr = copier.Get("", testDataDir, copier.GetOptions{}, []string{test.dockerfile}, pipeWriter)
+			getErr = copier.GetContext(t.Context(), "", testDataDir, copier.GetOptions{}, []string{test.dockerfile}, pipeWriter)
 		}
 		pipeWriter.Close()
 	})
 	wg.Go(func() {
 		if test.contextDir != "" || test.dockerfile != "" {
-			putErr = copier.Put("", contextDir, copier.PutOptions{}, pipeReader)
+			putErr = copier.PutContext(t.Context(), "", contextDir, copier.PutOptions{}, pipeReader)
 		} else {
 			putErr = os.Mkdir(contextDir, 0o755)
 		}
@@ -4203,7 +4203,7 @@ func TestCommit(t *testing.T) {
 		dockerDir = filepath.Join(tempdir, "docker")
 	}
 
-	ctx := context.TODO()
+	ctx := t.Context()
 
 	// connect to dockerd using go-dockerclient
 	client, err := docker.NewClientFromEnv()

@@ -44,6 +44,12 @@ func (o *AddOptions) annotations() (map[string]string, error) {
 // at `sourcePath`.  Note that the artifact will be added as a gzip-compressed
 // tar ball.  Add attempts to auto-tar and auto-compress only if necessary.
 func Add(ctx context.Context, sourcePath string, artifactPath string, options AddOptions) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	// Let's first make sure `sourcePath` exists and that we can access it.
 	if err := fileutils.Exists(sourcePath); err != nil {
 		return err

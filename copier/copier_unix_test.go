@@ -3,8 +3,10 @@
 package copier
 
 import (
+	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -14,13 +16,26 @@ const (
 	testIgnoreSymlinkDates = false
 )
 
-func TestPutChroot(t *testing.T) {
+func TestPutChrootNoCancel(t *testing.T) {
 	if uid != 0 {
 		t.Skip("chroot() requires root privileges, skipping")
 	}
 	couldChroot := canChroot
 	canChroot = true
-	testPut(t)
+	testPut(t.Context(), t, nil)
+	canChroot = couldChroot
+}
+
+func TestPutChrootCancel(t *testing.T) {
+	if uid != 0 {
+		t.Skip("chroot() requires root privileges, skipping")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 1*time.Nanosecond)
+	defer cancel()
+	time.Sleep(1 * time.Millisecond)
+	couldChroot := canChroot
+	canChroot = true
+	testPut(ctx, t, context.DeadlineExceeded)
 	canChroot = couldChroot
 }
 
@@ -34,23 +49,49 @@ func TestStatChroot(t *testing.T) {
 	canChroot = couldChroot
 }
 
-func TestGetSingleChroot(t *testing.T) {
+func TestGetSingleChrootNoCancel(t *testing.T) {
 	if uid != 0 {
 		t.Skip("chroot() requires root privileges, skipping")
 	}
 	couldChroot := canChroot
 	canChroot = true
-	testGetSingle(t)
+	testGetSingle(t.Context(), t, nil)
 	canChroot = couldChroot
 }
 
-func TestGetMultipleChroot(t *testing.T) {
+func TestGetSingleChrootCancel(t *testing.T) {
+	if uid != 0 {
+		t.Skip("chroot() requires root privileges, skipping")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 1*time.Nanosecond)
+	defer cancel()
+	time.Sleep(1 * time.Millisecond)
+	couldChroot := canChroot
+	canChroot = true
+	testGetSingle(ctx, t, context.DeadlineExceeded)
+	canChroot = couldChroot
+}
+
+func TestGetMultipleChrootNoCancel(t *testing.T) {
 	if uid != 0 {
 		t.Skip("chroot() requires root privileges, skipping")
 	}
 	couldChroot := canChroot
 	canChroot = true
-	testGetMultiple(t)
+	testGetMultiple(t.Context(), t, nil)
+	canChroot = couldChroot
+}
+
+func TestGetMultipleChrootCancel(t *testing.T) {
+	if uid != 0 {
+		t.Skip("chroot() requires root privileges, skipping")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 1*time.Nanosecond)
+	defer cancel()
+	time.Sleep(1 * time.Millisecond)
+	couldChroot := canChroot
+	canChroot = true
+	testGetMultiple(ctx, t, context.DeadlineExceeded)
 	canChroot = couldChroot
 }
 
@@ -170,14 +211,27 @@ func TestPutTimestampChroot(t *testing.T) {
 	testPutTimestamp(t)
 }
 
-func TestTarPutChroot(t *testing.T) {
+func TestTarPutChrootNoCancel(t *testing.T) {
 	if uid != 0 {
 		t.Skip("chroot() requires root privileges, skipping")
 	}
 	couldChroot := canChroot
 	canChroot = true
 	defer func() { canChroot = couldChroot }()
-	testTarPut(t)
+	testTarPut(t.Context(), t, nil)
+}
+
+func TestTarPutChrootCancel(t *testing.T) {
+	if uid != 0 {
+		t.Skip("chroot() requires root privileges, skipping")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 1*time.Nanosecond)
+	defer cancel()
+	time.Sleep(1 * time.Millisecond)
+	couldChroot := canChroot
+	canChroot = true
+	defer func() { canChroot = couldChroot }()
+	testTarPut(ctx, t, context.DeadlineExceeded)
 }
 
 func TestPutCreateDestPathChroot(t *testing.T) {

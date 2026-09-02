@@ -34,7 +34,7 @@ func TestMapContainerNameToHostname(t *testing.T) {
 }
 
 func TestCheckExitCodeError(t *testing.T) {
-	exitErr := exec.Command("false").Run()
+	exitErr := exec.CommandContext(t.Context(), "false").Run()
 	require.Error(t, exitErr)
 	var ee *exec.ExitError
 	require.True(t, errors.As(exitErr, &ee))

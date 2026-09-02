@@ -125,7 +125,7 @@ func main() {
 				MaxParallelDownloads:  maxParallelDownloads,
 				ForceManifestMIMEType: manifestFormat,
 			}
-			if _, err = cp.Image(context.TODO(), policyContext, dest, src, &options); err != nil {
+			if _, err = cp.Image(context.Background(), policyContext, dest, src, &options); err != nil {
 				return err
 			}
 

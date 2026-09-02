@@ -131,7 +131,7 @@ func TestArchive(t *testing.T) {
 								IgnoreAttestationErrors: requestIgnoreAttestationErrors,
 							}
 							inputPath := t.TempDir()
-							rc, workloadConfig, err := Archive(inputPath, ociConfig, archiveOptions)
+							rc, workloadConfig, err := Archive(t.Context(), inputPath, ociConfig, archiveOptions)
 							// bail now if we got an error we didn't expect
 							if errors.As(err, &chainRetrievalError{}) {
 								if !ignoreChainRetrievalErrors {

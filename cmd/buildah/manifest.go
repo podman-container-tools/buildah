@@ -741,7 +741,7 @@ func manifestRmCmd(c *cobra.Command, args []string) error {
 		Filters:        []string{"readonly=false"},
 		LookupManifest: true,
 	}
-	rmiReports, rmiErrors := runtime.RemoveImages(context.Background(), args, options)
+	rmiReports, rmiErrors := runtime.RemoveImages(getContext(), args, options)
 	for _, r := range rmiReports {
 		for _, u := range r.Untagged {
 			fmt.Printf("untagged: %s\n", u)

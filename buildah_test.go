@@ -1,7 +1,6 @@
 package buildah
 
 import (
-	"context"
 	"flag"
 	"os"
 	"testing"
@@ -46,7 +45,7 @@ func TestOpenBuilderCommonBuildOpts(t *testing.T) {
 	// or builder must enable sometime of locking mechanism i.e if
 	// routine is creating Builder other's must wait for it.
 	// Tracked here: https://github.com/containers/buildah/issues/5967
-	ctx := context.TODO()
+	ctx := t.Context()
 	store, err := storage.GetStore(types.StoreOptions{
 		RunRoot:         t.TempDir(),
 		GraphRoot:       t.TempDir(),

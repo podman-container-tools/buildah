@@ -1,7 +1,6 @@
 package imagebuildah
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -25,7 +24,7 @@ func TestFilesClosedProperlyByBuildDockerfiles(t *testing.T) {
 	}
 
 	// send files as above, and a missing one, so that we error early and return and don't try an actual build
-	_, _, err := BuildDockerfiles(context.Background(), nil, define.BuildOptions{}, append(append(make([]string, 0, len(paths)), paths...), "missing")...)
+	_, _, err := BuildDockerfiles(t.Context(), nil, define.BuildOptions{}, append(append(make([]string, 0, len(paths)), paths...), "missing")...)
 	var pathErr *fs.PathError
 	assert.True(t, errors.As(err, &pathErr))
 	assert.Equal(t, "missing", pathErr.Path)

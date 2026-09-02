@@ -3,6 +3,7 @@ package copier
 import (
 	"archive/tar"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,7 +31,7 @@ type getWrappedOptions struct {
 	DropCaps        []capability.Cap
 }
 
-func getWrapped(root string, directory string, getOptions GetOptions, globs []string, dropCaps []capability.Cap, bulkWriter io.Writer) error {
+func getWrapped(ctx context.Context, root string, directory string, getOptions GetOptions, globs []string, dropCaps []capability.Cap, bulkWriter io.Writer) error {
 	options := getWrappedOptions{
 		Root:       root,
 		Directory:  directory,
@@ -42,7 +43,7 @@ func getWrapped(root string, directory string, getOptions GetOptions, globs []st
 	if err != nil {
 		return fmt.Errorf("marshalling options: %w", err)
 	}
-	cmd := reexec.Command("get")
+	cmd := reexec.CommandContext(ctx, "get")
 	cmd.Env = append(cmd.Env, "OPTIONS="+string(encoded))
 	cmd.Stdout = bulkWriter
 	stderrBuf := bytes.Buffer{}
@@ -132,7 +133,7 @@ func testGetPermissionError(t *testing.T) {
 	for _, ignore := range []bool{false, true} {
 		t.Run(fmt.Sprintf("ignore=%v", ignore), func(t *testing.T) {
 			var buf bytes.Buffer
-			err = getWrapped(tmp, tmp, GetOptions{IgnoreUnreadable: ignore}, []string{"."}, dropCaps, &buf)
+			err = getWrapped(t.Context(), tmp, tmp, GetOptions{IgnoreUnreadable: ignore}, []string{"."}, dropCaps, &buf)
 			if ignore {
 				assert.NoError(t, err, "expected no errors")
 				tr := tar.NewReader(&buf)
@@ -142,7 +143,7 @@ func testGetPermissionError(t *testing.T) {
 					items++
 					_, err = tr.Next()
 				}
-				assert.True(t, errors.Is(err, io.EOF), "expected EOF to finish read contents")
+				assert.ErrorIs(t, err, io.EOF, "expected EOF to finish read contents")
 				assert.Equalf(t, 2, items, "expected two readable items, got %d", items)
 			} else {
 				assert.Error(t, err, "expected an error")

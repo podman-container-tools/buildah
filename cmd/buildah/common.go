@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -157,10 +159,30 @@ func openImage(ctx context.Context, sc *types.SystemContext, store storage.Store
 	return builder, nil
 }
 
-// getContext returns a context.TODO
+// getContext returns a context that may have a timeout, and which cancels if
+// it receives os.Interrupt
 func getContext() context.Context {
-	return context.TODO()
+	ctx, _ := getContextWithCancel()
+	return ctx
 }
+
+func getContextCancel() context.CancelFunc {
+	_, cancel := getContextWithCancel()
+	return cancel
+}
+
+var getContextWithCancel = sync.OnceValues(func() (context.Context, context.CancelFunc) {
+	var ctx context.Context
+	var cancel1, cancel2 func()
+	if rootCmd.PersistentFlags().Changed("experimental-timeout") {
+		ctx, cancel1 = context.WithTimeout(context.Background(), globalFlagResults.ExperimentalTimeout)
+	} else {
+		ctx = context.Background()
+		cancel1 = func() {}
+	}
+	ctx, cancel2 = signal.NotifyContext(ctx, os.Interrupt)
+	return ctx, func() { cancel1(); cancel2() }
+})
 
 func getUserFlags() pflag.FlagSet {
 	fs := pflag.FlagSet{}

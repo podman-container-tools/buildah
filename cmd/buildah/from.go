@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -110,7 +111,7 @@ newer: only pull images when newer images exist on the registry than those in th
 	rootCmd.AddCommand(fromCommand)
 }
 
-func onBuild(builder *buildah.Builder, quiet bool) error {
+func onBuild(ctx context.Context, builder *buildah.Builder, quiet bool) error {
 	ctr := 0
 	for _, onBuildSpec := range builder.OnBuild() {
 		ctr = ctr + 1
@@ -129,7 +130,7 @@ func onBuild(builder *buildah.Builder, quiet bool) error {
 				dest = args[size-1]
 				args = args[:size-1]
 			}
-			if err := builder.Add(dest, command == "ADD", buildah.AddAndCopyOptions{}, args...); err != nil {
+			if err := builder.AddContext(ctx, dest, command == "ADD", buildah.AddAndCopyOptions{}, args...); err != nil {
 				return err
 			}
 		case "ANNOTATION":
@@ -170,7 +171,7 @@ func onBuild(builder *buildah.Builder, quiet bool) error {
 			if quiet {
 				stdout = io.Discard
 			}
-			if err := builder.Run(args, buildah.RunOptions{Stdout: stdout}); err != nil {
+			if err := builder.RunContext(ctx, args, buildah.RunOptions{Stdout: stdout}); err != nil {
 				return err
 			}
 		case "SHELL":
@@ -305,7 +306,7 @@ func fromCmd(c *cobra.Command, args []string, iopts fromReply) error {
 		return err
 	}
 
-	if err := onBuild(builder, iopts.quiet); err != nil {
+	if err := onBuild(getContext(), builder, iopts.quiet); err != nil {
 		return err
 	}
 
