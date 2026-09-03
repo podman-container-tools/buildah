@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/bzip2"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -419,9 +420,53 @@ func FileInfoHeader(name string, fi os.FileInfo, link string) (*tar.Header, erro
 	return hdr, nil
 }
 
+// See include/uapi/linux/capability.h in the kernel sources.
+const (
+	vfsCapRevisionMask = 0xFF000000
+	vfsCapRevision2    = 0x02000000
+	vfsCapRevision3    = 0x03000000
+	vfsCapDataSizeV2   = 20
+	vfsCapDataSizeV3   = 24
+	vfsCapRootIDOffset = 20
+)
+
+// normalizeCapabilityRootID rewrites the rootid of a v3 "security.capability"
+// value from the host user namespace into the container namespace described by
+// idMappings, so an id-shifted layer records the container-relative owner rather
+// than a host-specific UID. Ownership is remapped the same way for the file
+// itself in prepareAddFile.
+//
+// Values that are not v3 are returned unchanged. When the rootid maps to container
+// root, the value is downgraded to v2, matching what the kernel returns when the
+// capability is read from within the container namespace.
+func normalizeCapabilityRootID(idMappings *idtools.IDMappings, capData []byte) ([]byte, error) {
+	if idMappings == nil || idMappings.Empty() || len(capData) != vfsCapDataSizeV3 {
+		return capData, nil
+	}
+	magicEtc := binary.LittleEndian.Uint32(capData[:4])
+	if magicEtc&vfsCapRevisionMask != vfsCapRevision3 {
+		return capData, nil
+	}
+	hostRootID := binary.LittleEndian.Uint32(capData[vfsCapRootIDOffset:])
+	containerID, err := idtools.RawToContainer(int(hostRootID), idMappings.UIDs())
+	if err != nil {
+		return nil, err
+	}
+	if containerID == 0 {
+		v2 := make([]byte, vfsCapDataSizeV2)
+		copy(v2, capData[:vfsCapDataSizeV2])
+		binary.LittleEndian.PutUint32(v2[:4], (magicEtc&^vfsCapRevisionMask)|vfsCapRevision2)
+		return v2, nil
+	}
+	out := make([]byte, vfsCapDataSizeV3)
+	copy(out, capData)
+	binary.LittleEndian.PutUint32(out[vfsCapRootIDOffset:], uint32(containerID))
+	return out, nil
+}
+
 // readSecurityXattrToTarHeader reads security.capability, security,image
 // xattrs from filesystem to a tar header
-func readSecurityXattrToTarHeader(path string, hdr *tar.Header) error {
+func readSecurityXattrToTarHeader(path string, hdr *tar.Header, idMappings *idtools.IDMappings) error {
 	if hdr.PAXRecords == nil {
 		hdr.PAXRecords = make(map[string]string)
 	}
@@ -430,9 +475,16 @@ func readSecurityXattrToTarHeader(path string, hdr *tar.Header) error {
 		if err != nil && !errors.Is(err, system.ENOTSUP) && err != system.ErrNotSupportedPlatform {
 			return fmt.Errorf("failed to read %q attribute from %q: %w", xattr, path, err)
 		}
-		if capability != nil {
-			hdr.PAXRecords[PaxSchilyXattr+xattr] = string(capability)
+		if capability == nil {
+			continue
 		}
+		if xattr == "security.capability" {
+			capability, err = normalizeCapabilityRootID(idMappings, capability)
+			if err != nil {
+				return fmt.Errorf("failed to normalize %q attribute from %q: %w", xattr, path, err)
+			}
+		}
+		hdr.PAXRecords[PaxSchilyXattr+xattr] = string(capability)
 	}
 	return nil
 }
@@ -566,7 +618,7 @@ func (ta *tarWriter) prepareAddFile(path, name string) (*addFileData, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := readSecurityXattrToTarHeader(path, hdr); err != nil {
+	if err := readSecurityXattrToTarHeader(path, hdr, ta.IDMappings); err != nil {
 		return nil, err
 	}
 	if err := readUserXattrToTarHeader(path, hdr); err != nil {

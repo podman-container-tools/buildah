@@ -39,7 +39,7 @@ require (
 	go.etcd.io/bbolt v1.5.0
 	go.podman.io/common v0.69.1-0.20260814154204-a60b104fc9c8
 	go.podman.io/image/v5 v5.41.1-0.20260814154204-a60b104fc9c8
-	go.podman.io/storage v1.64.1-0.20260814154204-a60b104fc9c8
+	go.podman.io/storage v1.64.1-0.20260903170514-ee32b1de185b
 	golang.org/x/crypto v0.56.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/sys v0.47.0
@@ -89,7 +89,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jinzhu/copier v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.19.2 // indirect
+	github.com/klauspost/compress v1.20.0 // indirect
 	github.com/klauspost/pgzip v1.2.6 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/manifoldco/promptui v0.9.0 // indirect

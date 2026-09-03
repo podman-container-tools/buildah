@@ -229,16 +229,14 @@ func NewDiffer(ctx context.Context, store storage.Store, blobDigest digest.Diges
 
 	differ, err := getProperDiffer(store, blobDigest, blobSize, annotations, iss, pullOptions)
 	if err != nil {
-		var fallbackErr ErrFallbackToOrdinaryLayerDownload
-		if !errors.As(err, &fallbackErr) {
+		if _, ok := errors.AsType[ErrFallbackToOrdinaryLayerDownload](err); !ok {
 			return nil, err
 		}
 		// If convert_images is enabled, always attempt to convert it instead of returning an error or falling back to a different method.
 		if !pullOptions.convertImages {
 			return nil, err
 		}
-		var canConvertErr errFallbackCanConvert
-		if !errors.As(err, &canConvertErr) {
+		if _, ok := errors.AsType[errFallbackCanConvert](err); !ok {
 			// We are supposed to use makeConvertFromRawDiffer, but that would not work.
 			// Fail, and make sure the error does _not_ match ErrFallbackToOrdinaryLayerDownload: use only the error text,
 			// discard all type information.
@@ -743,7 +741,7 @@ func (c *chunkedDiffer) prepareCompressedStreamToFile(partCompression compressed
 	case partCompression == fileTypeNoCompression:
 		return fileTypeNoCompression, nil
 	default:
-		return partCompression, fmt.Errorf("unknown file type %q", c.fileType)
+		return partCompression, fmt.Errorf("unknown file type %d", c.fileType)
 	}
 	return partCompression, nil
 }
@@ -794,7 +792,7 @@ func (c *chunkedDiffer) appendCompressedStreamToFile(compression compressedFileT
 			}
 		}
 	default:
-		return fmt.Errorf("unknown file type %q", c.fileType)
+		return fmt.Errorf("unknown file type %d", c.fileType)
 	}
 	return nil
 }

@@ -81,8 +81,7 @@ func generateComposeFsBlob(verityDigests map[string]string, toc any, composefsDi
 		cmd.Stdout = outFile
 		if err := cmd.Run(); err != nil {
 			rErr := fmt.Errorf("failed to convert json to erofs: %w", err)
-			exitErr := &exec.ExitError{}
-			if errors.As(err, &exitErr) {
+			if _, ok := errors.AsType[*exec.ExitError](err); ok {
 				return fmt.Errorf("%w: %s", rErr, strings.TrimSpace(errBuf.String()))
 			}
 			return rErr

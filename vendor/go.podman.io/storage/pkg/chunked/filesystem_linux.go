@@ -372,7 +372,7 @@ func openFileUnderRootOpenat2(dirfd int, name string, flags uint64, mode os.File
 
 // skipOpenat2 is set when openat2 is not supported by the underlying kernel and avoid
 // using it again.
-var skipOpenat2 int32
+var skipOpenat2 atomic.Bool
 
 // openFileUnderRootRaw tries to open a file using openat2 and if it is not supported fallbacks to a
 // userspace lookup.
@@ -386,14 +386,14 @@ func openFileUnderRootRaw(dirfd int, name string, flags uint64, mode os.FileMode
 		}
 		return fd, nil
 	}
-	if atomic.LoadInt32(&skipOpenat2) > 0 {
+	if skipOpenat2.Load() {
 		fd, err = openFileUnderRootFallback(dirfd, name, flags, mode)
 	} else {
 		fd, err = openFileUnderRootOpenat2(dirfd, name, flags, mode)
 		// If the function failed with ENOSYS, switch off the support for openat2
 		// and fallback to using safejoin.
 		if err != nil && errors.Is(err, unix.ENOSYS) {
-			atomic.StoreInt32(&skipOpenat2, 1)
+			skipOpenat2.Store(true)
 			fd, err = openFileUnderRootFallback(dirfd, name, flags, mode)
 		}
 	}
