@@ -2,11 +2,14 @@ package main
 
 import (
 	"flag"
+	"io"
+	"log/slog"
 	"os"
 	"os/user"
 	"testing"
 
 	"github.com/sirupsen/logrus"
+	lslog "github.com/sirupsen/logrus/hooks/slog"
 	"github.com/spf13/cobra"
 	"go.podman.io/buildah"
 	"go.podman.io/image/v5/types"
@@ -40,9 +43,13 @@ func TestMain(m *testing.M) {
 	if buildah.InitReexec() {
 		return
 	}
+	logrus.SetOutput(io.Discard)
+	logrus.AddHook(lslog.NewHook(slog.Default(), nil))
 	logrus.SetLevel(logrus.ErrorLevel)
+	slog.SetLogLoggerLevel(slog.LevelError)
 	if debug {
 		logrus.SetLevel(logrus.DebugLevel)
+		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
 	os.Exit(m.Run())
 }

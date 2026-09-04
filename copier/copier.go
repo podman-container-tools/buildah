@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net"
 	"os"
 	"os/user"
@@ -23,6 +24,7 @@ import (
 	"unicode"
 
 	"github.com/sirupsen/logrus"
+	lslog "github.com/sirupsen/logrus/hooks/slog"
 	mode "github.com/tonistiigi/dchapes-mode"
 	"go.podman.io/image/v5/pkg/compression"
 	"go.podman.io/image/v5/types"
@@ -943,9 +945,13 @@ func copierMain() {
 	_, _ = net.LookupHost("localhost")
 
 	// Set logging.
+	logrus.SetOutput(io.Discard)
+	logrus.AddHook(lslog.NewHook(slog.Default(), nil))
 	if level := os.Getenv("LOGLEVEL"); level != "" {
 		if ll, err := strconv.Atoi(level); err == nil {
-			logrus.SetLevel(logrus.Level(ll))
+			ll := logrus.Level(ll)
+			logrus.SetLevel(ll)
+			slog.SetLogLoggerLevel(lslog.Level(ll).Level())
 		}
 	}
 

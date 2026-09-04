@@ -3,10 +3,13 @@ package buildah
 import (
 	"context"
 	"flag"
+	"io"
+	"log/slog"
 	"os"
 	"testing"
 
 	"github.com/sirupsen/logrus"
+	lslog "github.com/sirupsen/logrus/hooks/slog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	imagetypes "go.podman.io/image/v5/types"
@@ -35,7 +38,10 @@ func TestMain(m *testing.M) {
 	if debug && level < logrus.DebugLevel {
 		level = logrus.DebugLevel
 	}
+	logrus.SetOutput(io.Discard)
+	logrus.AddHook(lslog.NewHook(slog.Default(), nil))
 	logrus.SetLevel(level)
+	slog.SetLogLoggerLevel(lslog.Level(level).Level())
 	os.Exit(m.Run())
 }
 

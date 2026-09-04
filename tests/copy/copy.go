@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"strings"
 
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
+	lslog "github.com/sirupsen/logrus/hooks/slog"
 	"github.com/spf13/cobra"
 	"go.podman.io/common/libnetwork/network"
 	"go.podman.io/common/pkg/config"
@@ -72,7 +75,10 @@ func main() {
 			if err != nil {
 				return err
 			}
+			logrus.SetOutput(io.Discard)
+			logrus.AddHook(lslog.NewHook(slog.Default(), nil))
 			logrus.SetLevel(level)
+			slog.SetLogLoggerLevel(lslog.Level(level).Level())
 
 			store, err := storage.GetStore(storeOptions)
 			if err != nil {

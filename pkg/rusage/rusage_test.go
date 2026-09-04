@@ -2,10 +2,13 @@ package rusage
 
 import (
 	"flag"
+	"io"
+	"log/slog"
 	"os"
 	"testing"
 
 	"github.com/sirupsen/logrus"
+	lslog "github.com/sirupsen/logrus/hooks/slog"
 	"github.com/stretchr/testify/require"
 	"go.podman.io/storage/pkg/reexec"
 )
@@ -26,8 +29,12 @@ func TestMain(m *testing.M) {
 		return
 	}
 	flag.Parse()
+
+	logrus.SetOutput(io.Discard)
+	logrus.AddHook(lslog.NewHook(slog.Default(), nil))
 	if testing.Verbose() {
 		logrus.SetLevel(logrus.DebugLevel)
+		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
 	os.Exit(m.Run())
 }

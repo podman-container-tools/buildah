@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -24,9 +25,10 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	lslog "github.com/sirupsen/logrus/hooks/slog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tonistiigi/dchapes-mode"
+	mode "github.com/tonistiigi/dchapes-mode"
 	"go.podman.io/image/v5/types"
 	"go.podman.io/storage/pkg/idtools"
 	"go.podman.io/storage/pkg/reexec"
@@ -37,8 +39,11 @@ func TestMain(m *testing.M) {
 		return
 	}
 	flag.Parse()
+	logrus.SetOutput(io.Discard)
+	logrus.AddHook(lslog.NewHook(slog.Default(), nil))
 	if testing.Verbose() {
 		logrus.SetLevel(logrus.DebugLevel)
+		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
 	os.Exit(m.Run())
 }

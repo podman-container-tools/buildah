@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"strings"
 
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
+	lslog "github.com/sirupsen/logrus/hooks/slog"
 	"go.podman.io/buildah/define"
 	"go.podman.io/buildah/docker"
 	"go.podman.io/buildah/util"
@@ -50,9 +53,13 @@ func main() {
 	showc := flag.Bool("show-config", false, "output the configuration JSON")
 	rebuildc := flag.Bool("rebuild-config", false, "rebuild the configuration JSON")
 	flag.Parse()
+	logrus.SetOutput(io.Discard)
+	logrus.AddHook(lslog.NewHook(slog.Default(), nil))
 	logrus.SetLevel(logrus.ErrorLevel)
+	slog.SetLogLoggerLevel(slog.LevelError)
 	if debug != nil && *debug {
 		logrus.SetLevel(logrus.DebugLevel)
+		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
 	switch *mtype {
 	case define.OCIv1ImageManifest:

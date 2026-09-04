@@ -3,6 +3,9 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
+	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"runtime"
@@ -13,6 +16,7 @@ import (
 	ispecs "github.com/opencontainers/image-spec/specs-go"
 	rspecs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sirupsen/logrus"
+	lslog "github.com/sirupsen/logrus/hooks/slog"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.podman.io/buildah"
@@ -22,6 +26,7 @@ import (
 	"go.podman.io/common/pkg/config"
 	"go.podman.io/storage"
 	"go.podman.io/storage/pkg/unshare"
+	"golang.org/x/term"
 )
 
 const (
@@ -167,9 +172,16 @@ func before(cmd *cobra.Command) error {
 	if err != nil {
 		return fmt.Errorf("unable to parse log level: %w", err)
 	}
+	logrus.SetOutput(io.Discard)
+	logrus.AddHook(lslog.NewHook(slog.Default(), nil))
 	logrus.SetLevel(logrusLvl)
+	slog.SetLogLoggerLevel(lslog.Level(logrusLvl).Level())
 	if globalFlagResults.Debug {
 		logrus.SetLevel(logrus.DebugLevel)
+		slog.SetLogLoggerLevel(slog.LevelDebug)
+	}
+	if term.IsTerminal(int(os.Stderr.Fd())) {
+		log.SetFlags(0) // We don’t want date/time in interactive output
 	}
 
 	switch cmd.Use {

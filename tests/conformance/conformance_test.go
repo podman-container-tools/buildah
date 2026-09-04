@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"maps"
 	"os"
 	"path"
@@ -34,6 +35,7 @@ import (
 	"github.com/openshift/imagebuilder"
 	"github.com/openshift/imagebuilder/dockerclient"
 	"github.com/sirupsen/logrus"
+	lslog "github.com/sirupsen/logrus/hooks/slog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.podman.io/buildah"
@@ -142,7 +144,10 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		logrus.Fatalf("error parsing log level %q: %v", logLevel, err)
 	}
+	logrus.SetOutput(io.Discard)
+	logrus.AddHook(lslog.NewHook(slog.Default(), nil))
 	logrus.SetLevel(level)
+	slog.SetLogLoggerLevel(lslog.Level(level).Level())
 	result := m.Run()
 	if err = os.RemoveAll(tempdir); err != nil {
 		logrus.Errorf("removing temporary directory %q: %v", tempdir, err)

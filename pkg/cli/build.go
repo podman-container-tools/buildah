@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -195,7 +196,7 @@ func GenBuildOptions(c *cobra.Command, inputArgs []string, iopts BuildOptions) (
 	stderr = os.Stderr
 	reporter = os.Stderr
 	if iopts.Logwriter != nil {
-		logrus.SetOutput(iopts.Logwriter)
+		log.SetOutput(iopts.Logwriter)
 		stdout = iopts.Logwriter
 		stderr = iopts.Logwriter
 		reporter = iopts.Logwriter
