@@ -1084,6 +1084,22 @@ _EOF
   assert "$output" !~ "caught reparented child process"
 }
 
+@test "run-umask" {
+  skip_if_no_runtime
+
+  _prefetch busybox
+  run_buildah from --quiet --pull=false $WITH_POLICY_JSON busybox
+  cid=$output
+
+  for umaskval in 2 22 222 123 ; do
+    run_buildah run --umask=$umaskval $cid sh -c umask
+    expect_output $(printf %04o 0$umaskval)
+  done
+
+  run_buildah 125 run --umask=1000 $cid sh -c umask
+  expect_output --substring "umask value 01000 is out of range"
+}
+
 @test "run-valid-exit-codes" {
   skip_if_no_runtime
 

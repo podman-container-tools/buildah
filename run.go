@@ -192,6 +192,8 @@ type RunOptions struct {
 	// ValidExitCodes is a list of exit codes which should be considered
 	// successful. If empty, only exit code 0 is considered success.
 	ValidExitCodes []int32
+	// Initial umask to set for the process.
+	Umask *uint32
 }
 
 // RunMountArtifacts are the artifacts created when using a run mount.

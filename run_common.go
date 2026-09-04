@@ -300,6 +300,9 @@ func (b *Builder) configureUIDGID(g *generate.Generator, mountPoint string, opti
 		}
 		g.AddProcessAdditionalGid(uint32(gid))
 	}
+	if options.Umask != nil {
+		g.SetProcessUmask(*options.Umask)
+	}
 
 	// Remove capabilities if not running as root except Bounding set
 	if user.UID != 0 && g.Config.Process.Capabilities != nil {

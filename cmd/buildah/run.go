@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -36,6 +37,7 @@ type runInputOptions struct {
 	noHosts        bool
 	noPivot        bool
 	terminal       bool
+	umask          string
 	validExitCodes []int32
 	volumes        []string
 	workingDir     string
@@ -84,6 +86,7 @@ func runInit() {
 	flags.BoolVar(&opts.noHosts, "no-hosts", false, "do not override the /etc/hosts file within the container")
 	flags.BoolVar(&opts.noPivot, "no-pivot", false, "do not use pivot root to jail process inside rootfs")
 	flags.BoolVarP(&opts.terminal, "terminal", "t", false, "allocate a pseudo-TTY in the container")
+	flags.StringVar(&opts.umask, "umask", "", "set umask for command")
 	flags.Int32SliceVar(&opts.validExitCodes, "valid-exit-codes", []int32{0}, "list of exit codes to consider successful (default [0])")
 	flags.StringArrayVarP(&opts.volumes, "volume", "v", []string{}, "bind mount a host location into the container while running the command")
 	flags.StringArrayVar(&opts.mounts, "mount", []string{}, "attach a filesystem mount to the container (default [])")
@@ -167,6 +170,19 @@ func runCmd(c *cobra.Command, args []string, iopts runInputOptions) error {
 		}
 	}
 
+	var umask *uint32
+	if c.Flag("umask").Changed {
+		parsed, err := strconv.ParseUint(iopts.umask, 8, 32)
+		if err != nil {
+			return fmt.Errorf("parsing umask value %q: %w", iopts.umask, err)
+		}
+		truncated := uint32(parsed & 0o777)
+		if uint64(truncated) != parsed {
+			return fmt.Errorf("umask value %#o is out of range", parsed)
+		}
+		umask = &truncated
+	}
+
 	options := buildah.RunOptions{
 		Hostname:         iopts.hostname,
 		Runtime:          iopts.runtime,
@@ -185,6 +201,7 @@ func runCmd(c *cobra.Command, args []string, iopts runInputOptions) error {
 		DeviceSpecs:      iopts.devices,
 		CDIConfigDir:     iopts.cdiConfigDir,
 		ValidExitCodes:   iopts.validExitCodes,
+		Umask:            umask,
 	}
 
 	if c.Flag("terminal").Changed {

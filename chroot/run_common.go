@@ -741,6 +741,11 @@ func runUsingChrootExecMain() {
 		os.Exit(1)
 	}
 
+	if user.Umask != nil {
+		logrus.Debugf("setting umask %04o", *user.Umask)
+		unix.Umask(int(*user.Umask))
+	}
+
 	// Set $PATH to the value for the container, so that when args[0] is not an absolute path,
 	// exec.Command() can find it using exec.LookPath().
 	for _, env := range slices.Backward(options.Spec.Process.Env) {

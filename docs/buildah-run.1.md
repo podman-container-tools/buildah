@@ -1,4 +1,4 @@
-# buildah-run "1" "March 2017" "buildah"
+# buildah-run "1" "September 2026" "buildah"
 
 ## NAME
 buildah\-run - Run a command inside of the container.
@@ -283,6 +283,12 @@ attached to a pseudo-TTY.  Setting the `--tty` option to `true` will cause a
 pseudo-TTY to be allocated inside the container connecting the user's "terminal"
 with the stdin and stdout stream of the container.  Setting the `--tty` option to
 `false` will prevent the pseudo-TTY from being allocated.
+
+**--umask** *octal_value*
+
+Set the umask(2) for the command.  Commands are able to modify the umask, so
+for some commands this provides no meaningful effect.  This value is not
+applied to files created by `buildah` itself.
 
 **--user** *user*[:*group*]
 
