@@ -506,7 +506,7 @@ go.opentelemetry.io/otel/trace
 go.opentelemetry.io/otel/trace/embedded
 go.opentelemetry.io/otel/trace/internal/telemetry
 go.opentelemetry.io/otel/trace/noop
-# go.podman.io/common v0.69.2-0.20260903170514-ee32b1de185b
+# go.podman.io/common v0.69.2-0.20260904133341-741ebc37de41
 ## explicit; go 1.26.0
 go.podman.io/common/internal
 go.podman.io/common/libimage
@@ -626,7 +626,7 @@ go.podman.io/image/v5/transports
 go.podman.io/image/v5/transports/alltransports
 go.podman.io/image/v5/types
 go.podman.io/image/v5/version
-# go.podman.io/storage v1.64.1-0.20260903170514-ee32b1de185b
+# go.podman.io/storage v1.64.1-0.20260904133341-741ebc37de41
 ## explicit; go 1.26.0
 go.podman.io/storage
 go.podman.io/storage/drivers

@@ -1349,6 +1349,27 @@ _EOF
   expect_output --substring "500"
 }
 
+@test "build with an id-mapped user namespace and file capabilities" {
+  skip_if_rootless_environment
+  skip_if_chroot
+  _prefetch registry.access.redhat.com/ubi10:latest
+
+  local contextdir=${TEST_SCRATCH_DIR}/bud/userns-capabilities
+  mkdir -p $contextdir
+  cat > $contextdir/Dockerfile << _EOF
+FROM registry.access.redhat.com/ubi10
+RUN groupadd -g 67283 crunbuild
+RUN useradd -u 579841 -g 67283 -s /bin/bash -m crunbuild
+_EOF
+
+  $BUILDAH_BINARY build --layers --no-cache --network host \
+    --userns-gid-map 0:1000000:65536 \
+    --userns-gid-map 67283:67283:1 \
+    --userns-uid-map 0:1000000:65536 \
+    --userns-uid-map 579841:579841:1 \
+    -t userns-capabilities $contextdir
+}
+
 # Test building with --userns=auto with uidmapping
 @test "build with --userns=auto with uidmapping" {
   _prefetch alpine
