@@ -168,6 +168,7 @@ type executor struct {
 	imageInfoLock                           sync.Mutex
 	imageInfoCache                          map[string]imageTypeAndHistoryAndDiffIDs
 	fromOverride                            string
+	fromOverrideStage                       int // stage position that received --from, or -1 if none
 	additionalBuildContexts                 map[string]*additionalBuildContext
 	manifest                                string
 	secrets                                 map[string]define.Secret
@@ -370,6 +371,7 @@ func newExecutor(logger *logrus.Logger, logPrefix string, store storage.Store, o
 		rusageLogFile:                           rusageLogFile,
 		imageInfoCache:                          make(map[string]imageTypeAndHistoryAndDiffIDs),
 		fromOverride:                            options.From,
+		fromOverrideStage:                       -1,
 		additionalBuildContexts:                 wrappedAdditionalBuildContexts,
 		manifest:                                options.Manifest,
 		secrets:                                 secrets,
@@ -944,6 +946,7 @@ func (b *executor) Build(ctx context.Context, stages imagebuilder.Stages) (image
 						if b.fromOverride != "" {
 							child.Next.Value = b.fromOverride
 							b.fromOverride = ""
+							b.fromOverrideStage = stage.Position
 						}
 						base := child.Next.Value
 						if base != "" && base != buildah.BaseImageFakeName {
