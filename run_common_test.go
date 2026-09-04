@@ -2,11 +2,15 @@ package buildah
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
+	"github.com/opencontainers/runtime-tools/generate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.podman.io/common/pkg/config"
 )
 
 func TestMapContainerNameToHostname(t *testing.T) {
@@ -66,4 +70,90 @@ func TestCheckExitCodeError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildahProxyAndNoLeak(t *testing.T) {
+	tmpDir := t.TempDir()
+	confPath := filepath.Join(tmpDir, "containers.conf")
+	confContent := `
+[containers]
+http_proxy = false
+env = [
+  "http_proxy=http://host.containers.internal:1080",
+  "https_proxy=http://host.containers.internal:1080",
+  "CUSTOM_NON_PROXY_VAR=should_be_ignored"
+]
+`
+	err := os.WriteFile(confPath, []byte(confContent), 0o644)
+	require.NoError(t, err)
+
+	// Reset the default container config cache on test cleanup. Register before t.Setenv so that
+	// the cleanups caused by `t.Setenv` calls run before it (because cleanup happens in LIFO order).
+	t.Cleanup(func() { _, _ = config.New(&config.Options{SetDefault: true}) })
+	t.Setenv("CONTAINERS_CONF", confPath)
+	t.Setenv("http_proxy", "http://127.0.0.1:1080")
+
+	_, err = config.New(&config.Options{SetDefault: true})
+	require.NoError(t, err)
+
+	builder := &Builder{}
+	builder.CommonBuildOpts = &CommonBuildOptions{
+		HTTPProxy: false,
+	}
+
+	g, err := generate.New("linux")
+	require.NoError(t, err)
+
+	err = builder.configureEnvironment(&g, RunOptions{}, []string{"PATH=/usr/bin"})
+	require.NoError(t, err)
+
+	procEnv := g.Config.Process.Env
+	t.Logf("Transient process env during RUN: %v", procEnv)
+
+	assert.Contains(t, procEnv, "http_proxy=http://host.containers.internal:1080")
+	assert.NotContains(t, procEnv, "http_proxy=http://127.0.0.1:1080")
+	assert.NotContains(t, procEnv, "CUSTOM_NON_PROXY_VAR=should_be_ignored")
+
+	imageEnv := builder.OCIv1.Config.Env
+	assert.NotContains(t, imageEnv, "http_proxy=http://host.containers.internal:1080")
+}
+
+func TestBuildahProxyPrecedence(t *testing.T) {
+	tmpDir := t.TempDir()
+	confPath := filepath.Join(tmpDir, "containers.conf")
+	confContent := `
+[containers]
+http_proxy = false
+env = [
+  "http_proxy=http://host.containers.internal:1080"
+]
+`
+	err := os.WriteFile(confPath, []byte(confContent), 0o644)
+	require.NoError(t, err)
+
+	// Reset the default container config cache on test cleanup. Register before t.Setenv so that
+	// the cleanups caused by `t.Setenv` calls run before it (because cleanup happens in LIFO order).
+	t.Cleanup(func() { _, _ = config.New(&config.Options{SetDefault: true}) })
+	t.Setenv("CONTAINERS_CONF", confPath)
+	t.Setenv("http_proxy", "http://127.0.0.1:1080")
+
+	_, err = config.New(&config.Options{SetDefault: true})
+	require.NoError(t, err)
+
+	builder := &Builder{}
+
+	// Case 1: HTTPProxy: true (Host env overrides containers.conf)
+	builder.CommonBuildOpts = &CommonBuildOptions{HTTPProxy: true}
+	g1, err := generate.New("linux")
+	require.NoError(t, err)
+	err = builder.configureEnvironment(&g1, RunOptions{}, []string{"PATH=/usr/bin"})
+	require.NoError(t, err)
+	assert.Contains(t, g1.Config.Process.Env, "http_proxy=http://127.0.0.1:1080")
+
+	// Case 2: CLI Options.Env overrides both containers.conf and host env
+	g2, err := generate.New("linux")
+	require.NoError(t, err)
+	err = builder.configureEnvironment(&g2, RunOptions{Env: []string{"http_proxy=http://cli.override:1080"}}, []string{"PATH=/usr/bin"})
+	require.NoError(t, err)
+	assert.Contains(t, g2.Config.Process.Env, "http_proxy=http://cli.override:1080")
 }

@@ -230,8 +230,11 @@ func (b *Builder) Run(command []string, options RunOptions) error {
 		return err
 	}
 
-	// hardwire the environment to match docker build to avoid subtle and hard-to-debug differences due to containers.conf
-	b.configureEnvironment(g, options, []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"})
+	// Pass a fixed environment to match docker build because passing the whole containers.conf instead would cause
+	// subtle and hard-to-debug differences. Proxy variables are the exception, as they are read from containers.conf in configureEnvironment.
+	if err := b.configureEnvironment(g, options, []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}); err != nil {
+		return err
+	}
 
 	if b.CommonBuildOpts == nil {
 		return fmt.Errorf("invalid format on container you must recreate the container")

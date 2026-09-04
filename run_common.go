@@ -311,8 +311,22 @@ func (b *Builder) configureUIDGID(g *generate.Generator, mountPoint string, opti
 	return homeDir, nil
 }
 
-func (b *Builder) configureEnvironment(g *generate.Generator, options RunOptions, defaultEnv []string) {
+func (b *Builder) configureEnvironment(g *generate.Generator, options RunOptions, defaultEnv []string) error {
 	g.ClearProcessEnv()
+
+	conf, err := config.Default()
+	if err != nil {
+		return fmt.Errorf("failed to get container config: %w", err)
+	}
+	for _, envSpec := range conf.Containers.Env.Get() {
+		env := strings.SplitN(envSpec, "=", 2)
+		// Only pass proxy environment variables configured in containers.conf into build RUN steps.
+		// Arbitrary environment variables from containers.conf are excluded to preserve build reproducibility
+		// and avoid subtle build-to-build differences across environments.
+		if len(env) > 1 && slices.Contains(config.ProxyEnv, env[0]) {
+			g.AddProcessEnv(env[0], env[1])
+		}
+	}
 
 	if b.CommonBuildOpts.HTTPProxy {
 		for _, envSpec := range config.ProxyEnv {
@@ -328,6 +342,7 @@ func (b *Builder) configureEnvironment(g *generate.Generator, options RunOptions
 			g.AddProcessEnv(env[0], env[1])
 		}
 	}
+	return nil
 }
 
 // getNetworkInterface creates the network interface
