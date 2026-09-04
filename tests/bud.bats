@@ -1131,6 +1131,30 @@ symlink(subdir)"
   expect_output --substring "This is built for $myarch"
 }
 
+@test "build with TARGETARCH in COPY --from" {
+  _prefetch alpine
+  run_buildah info --format '{{.host.arch}}'
+  myarch="$output"
+
+  # Test COPY --from with TARGETARCH variable substitution
+  run_buildah build --platform linux/$myarch $WITH_POLICY_JSON -t test-copy-from -f $BUDFILES/targetarch-copy-from/Containerfile
+  run_buildah from --name myctr test-copy-from
+  run_buildah run myctr cat /arch
+  expect_output "$myarch"
+}
+
+@test "build with TARGETARCH in FROM" {
+  _prefetch alpine
+  run_buildah info --format '{{.host.arch}}'
+  myarch="$output"
+
+  # Test FROM with TARGETARCH variable substitution
+  run_buildah build --platform linux/$myarch $WITH_POLICY_JSON -t test-from -f $BUDFILES/targetarch-copy-from/Containerfile-from
+  run_buildah from --name myctr test-from
+  run_buildah run myctr cat /arch
+  expect_output "$myarch"
+}
+
 @test "build with basename resolving default arg" {
   run_buildah info --format '{{.host.os}}/{{.host.arch}}{{if .host.variant}}/{{.host.variant}}{{end}}'
   myplatform="$output"
