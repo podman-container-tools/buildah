@@ -1959,38 +1959,33 @@ func (b *Builder) getSSHMount(tokens []string, count int, sshsources map[string]
 	if err != nil {
 		return nil, nil, err
 	}
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			if err := fwdAgent.Shutdown(); err != nil {
+				b.Logger.Errorf("error shutting down agent: %v", err)
+			}
+		}
+	}()
 
 	if err := relabel(filepath.Dir(hostSock), b.MountLabel, false); err != nil {
-		if shutdownErr := fwdAgent.Shutdown(); shutdownErr != nil {
-			b.Logger.Errorf("error shutting down agent: %v", shutdownErr)
-		}
 		return nil, nil, err
 	}
 	if err := relabel(hostSock, b.MountLabel, false); err != nil {
-		if shutdownErr := fwdAgent.Shutdown(); shutdownErr != nil {
-			b.Logger.Errorf("error shutting down agent: %v", shutdownErr)
-		}
 		return nil, nil, err
 	}
 	hostUID, hostGID, err := util.GetHostIDs(idMaps.uidmap, idMaps.gidmap, uid, gid)
 	if err != nil {
-		if shutdownErr := fwdAgent.Shutdown(); shutdownErr != nil {
-			b.Logger.Errorf("error shutting down agent: %v", shutdownErr)
-		}
 		return nil, nil, err
 	}
 	if err := os.Lchown(hostSock, int(hostUID), int(hostGID)); err != nil {
-		if shutdownErr := fwdAgent.Shutdown(); shutdownErr != nil {
-			b.Logger.Errorf("error shutting down agent: %v", shutdownErr)
-		}
 		return nil, nil, err
 	}
 	if err := os.Chmod(hostSock, os.FileMode(mode)); err != nil {
-		if shutdownErr := fwdAgent.Shutdown(); shutdownErr != nil {
-			b.Logger.Errorf("error shutting down agent: %v", shutdownErr)
-		}
 		return nil, nil, err
 	}
+
+	succeeded = true
 	newMount := specs.Mount{
 		Destination: target,
 		Type:        define.TypeBind,

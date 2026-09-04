@@ -825,7 +825,7 @@ func runMakeStdioPipe(uid, gid int) ([][]int, error) {
 	return stdioPipe, nil
 }
 
-func setupNamespaces(_ *logrus.Logger, g *generate.Generator, namespaceOptions define.NamespaceOptions, idmapOptions define.IDMappingOptions, policy define.NetworkConfigurationPolicy) (configureNetwork bool, networkString string, configureUTS bool, err error) {
+func setupNamespaces(g *generate.Generator, namespaceOptions define.NamespaceOptions, idmapOptions define.IDMappingOptions, policy define.NetworkConfigurationPolicy) (configureNetwork bool, networkString string, configureUTS bool, err error) {
 	defaultContainerConfig, err := config.Default()
 	if err != nil {
 		return false, "", false, fmt.Errorf("failed to get container config: %w", err)
@@ -970,7 +970,7 @@ func (b *Builder) configureNamespaces(g *generate.Generator, options *RunOptions
 	if networkPolicy == NetworkDisabled {
 		namespaceOptions.AddOrReplace(define.NamespaceOptions{{Name: string(specs.NetworkNamespace), Host: false}}...)
 	}
-	configureNetwork, networkString, configureUTS, err := setupNamespaces(options.Logger, g, namespaceOptions, b.IDMappingOptions, networkPolicy)
+	configureNetwork, networkString, configureUTS, err := setupNamespaces(g, namespaceOptions, b.IDMappingOptions, networkPolicy)
 	if err != nil {
 		return false, "", err
 	}

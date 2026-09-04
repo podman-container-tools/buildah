@@ -534,7 +534,7 @@ func (b *Builder) runConfigureNetwork(pid int, isolation define.Isolation, optio
 	return teardown, netStatusToNetResult(netStatus, hostnames), nil
 }
 
-func setupNamespaces(logger *logrus.Logger, g *generate.Generator, namespaceOptions define.NamespaceOptions, idmapOptions define.IDMappingOptions, policy define.NetworkConfigurationPolicy) (configureNetwork bool, networkString string, configureUTS bool, err error) {
+func setupNamespaces(g *generate.Generator, namespaceOptions define.NamespaceOptions, idmapOptions define.IDMappingOptions, policy define.NetworkConfigurationPolicy) (configureNetwork bool, networkString string, configureUTS bool, err error) {
 	// Set namespace options in the container configuration.
 	for _, namespaceOption := range namespaceOptions {
 		switch namespaceOption.Name {
@@ -585,7 +585,7 @@ func (b *Builder) configureNamespaces(g *generate.Generator, options *RunOptions
 		}
 	}
 
-	configureNetwork, networkString, configureUTS, err := setupNamespaces(options.Logger, g, namespaceOptions, b.IDMappingOptions, networkPolicy)
+	configureNetwork, networkString, configureUTS, err := setupNamespaces(g, namespaceOptions, b.IDMappingOptions, networkPolicy)
 	if err != nil {
 		return false, "", err
 	}
