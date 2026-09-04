@@ -5087,19 +5087,19 @@ _EOF
 @test "bud without any arguments should fail when no Dockerfile exists" {
   cd $TEST_SCRATCH_DIR
   run_buildah 125 build --signature-policy ${TEST_SOURCES}/policy.json
-  expect_output --substring "no such file or directory"
+  expect_output --substring "cannot find Containerfile or Dockerfile"
 }
 
 @test "bud with specified context should fail if directory contains no Dockerfile" {
   mkdir -p $TEST_SCRATCH_DIR/empty-dir
   run_buildah 125 build $WITH_POLICY_JSON "$TEST_SCRATCH_DIR"/empty-dir
-  expect_output --substring "no such file or directory"
+  expect_output --substring "cannot find Containerfile or Dockerfile"
 }
 
 @test "bud with specified context should fail if Dockerfile in context directory is actually a file" {
   mkdir -p "$TEST_SCRATCH_DIR"/Dockerfile
   run_buildah 125 build $WITH_POLICY_JSON "$TEST_SCRATCH_DIR"
-  expect_output --substring "is not a file"
+  expect_output --substring "cannot find Containerfile or Dockerfile"
 }
 
 @test "bud with specified context should fail if context directory does not exist" {
@@ -8394,6 +8394,202 @@ srv.serve_forever()
   run_buildah 125 build $WITH_POLICY_JSON - < ${broken_tar}
   run cat ${targetfile}
   assert "$output" = "ORIGINAL_CONTENT"
+}
+
+# https://github.com/podman-container-tools/buildah/issues/6861
+@test "bud with local context symlinked Containerfile outside context" {
+  _prefetch alpine
+
+  local secretfile=${TEST_SCRATCH_DIR}/secretfile
+  cat > ${secretfile} << _EOF
+FROM alpine
+RUN echo SECRETHOSTCONTENT
+_EOF
+
+  local contextdir=${TEST_SCRATCH_DIR}/dir2
+  mkdir -p ${contextdir}
+  ln -s ${secretfile} ${contextdir}/Containerfile
+
+  run_buildah 125 build $WITH_POLICY_JSON ${contextdir}
+  assert "$output" !~ "SECRETHOSTCONTENT"
+}
+
+# https://github.com/podman-container-tools/buildah/issues/6861
+@test "bud with local context symlinked Containerfile within context" {
+  _prefetch alpine
+
+  local contextdir=${TEST_SCRATCH_DIR}/context
+  mkdir -p ${contextdir}/subdir
+  cat > ${contextdir}/subdir/Containerfile.real << _EOF
+FROM alpine
+RUN echo symlink-within-context-works
+_EOF
+  ln -s subdir/Containerfile.real ${contextdir}/Containerfile
+
+  run_buildah build $WITH_POLICY_JSON ${contextdir}
+  assert "$output" =~ "symlink-within-context-works"
+}
+
+# https://github.com/podman-container-tools/buildah/pull/6886#discussion_r3524076920
+@test "bud accepts symlinked context directory" {
+  _prefetch alpine
+
+  local realdir=${TEST_SCRATCH_DIR}/real-context
+  mkdir -p ${realdir}
+  cat > ${realdir}/Containerfile << _EOF
+FROM alpine
+RUN echo symlinked-context-dir-works
+_EOF
+
+  ln -s ${realdir} ${TEST_SCRATCH_DIR}/symlinked-context
+
+  run_buildah build $WITH_POLICY_JSON ${TEST_SCRATCH_DIR}/symlinked-context
+  assert "$output" =~ "symlinked-context-dir-works"
+}
+
+# https://github.com/podman-container-tools/buildah/issues/6861
+# https://github.com/podman-container-tools/buildah/pull/6886#discussion_r3363659942
+@test "bud accepts symlinked Dockerfile with relative escape clamped to context root" {
+  _prefetch alpine
+
+  local contextdir=${TEST_SCRATCH_DIR}/context
+  mkdir -p ${contextdir}
+  cat > ${contextdir}/file << _EOF
+FROM alpine
+RUN echo escape-clamped-works
+_EOF
+  # ../file escapes via ".." but RESOLVE_IN_ROOT clamps it to the context
+  # root, so it resolves to ./file inside the context.  Docker BuildKit
+  # accepts this (see moby/buildkit#6840).
+  ln -s ../file ${contextdir}/Dockerfile
+
+  run_buildah build $WITH_POLICY_JSON ${contextdir}
+  assert "$output" =~ "escape-clamped-works"
+}
+
+@test "bud rejects symlinked Dockerfile whose clamped path does not exist" {
+  _prefetch alpine
+
+  local contextdir=${TEST_SCRATCH_DIR}/context
+  mkdir -p ${contextdir}
+  cat > ${contextdir}/file << _EOF
+FROM alpine
+RUN echo SHOULD-NOT-RUN
+_EOF
+  ln -s ../context/file ${contextdir}/Dockerfile
+
+  run_buildah 125 build $WITH_POLICY_JSON ${contextdir}
+  expect_output --substring "cannot find Containerfile or Dockerfile"
+  assert "$output" !~ "SHOULD-NOT-RUN"
+}
+
+# https://github.com/podman-container-tools/buildah/issues/6861
+@test "bud rejects symlinked Dockerfile to non-existent target" {
+  _prefetch alpine
+
+  local contextdir=${TEST_SCRATCH_DIR}/context
+  mkdir -p ${contextdir}
+  ln -s ../nonexistent ${contextdir}/Dockerfile
+
+  run_buildah 125 build $WITH_POLICY_JSON ${contextdir}
+  expect_output --substring "cannot find Containerfile or Dockerfile"
+}
+
+# https://github.com/podman-container-tools/buildah/issues/6861
+@test "bud accepts absolute symlinked Dockerfile re-rooted under context" {
+  _prefetch alpine
+
+  local contextdir=${TEST_SCRATCH_DIR}/context
+  mkdir -p ${contextdir}/subdirectory
+  cat > ${contextdir}/subdirectory/Containerfile.real << _EOF
+FROM alpine
+RUN echo absolute-rerooted-works
+_EOF
+  ln -s /subdirectory/Containerfile.real ${contextdir}/Dockerfile
+
+  run_buildah build $WITH_POLICY_JSON ${contextdir}
+  assert "$output" =~ "absolute-rerooted-works"
+}
+
+# https://github.com/podman-container-tools/buildah/issues/6861
+@test "bud with stdin tar context rejects symlinked Dockerfile pointing outside temp dir" {
+  local targetfile=${TEST_SCRATCH_DIR}/targetfile
+  echo "SECRET_CONTENT" > ${targetfile}
+
+  local tarsrc=${TEST_SCRATCH_DIR}/tarsrc
+  mkdir -p ${tarsrc}
+  ln -s ${targetfile} ${tarsrc}/Dockerfile
+  local context_tar=${TEST_SCRATCH_DIR}/context.tar
+  tar -cf ${context_tar} --owner=0:0 --numeric-owner -C ${tarsrc} Dockerfile
+
+  run_buildah 125 build $WITH_POLICY_JSON - < ${context_tar}
+  assert "$output" =~ "cannot find Containerfile or Dockerfile"
+  assert "$output" !~ "SECRET_CONTENT"
+}
+
+# https://github.com/podman-container-tools/buildah/issues/6861
+@test "bud with http tar context rejects symlinked Dockerfile pointing outside temp dir" {
+  local targetfile=${TEST_SCRATCH_DIR}/targetfile
+  echo "SECRET_CONTENT" > ${targetfile}
+
+  local tarsrc=${TEST_SCRATCH_DIR}/tarsrc
+  mkdir -p ${tarsrc}
+  ln -s ${targetfile} ${tarsrc}/Dockerfile
+  local contentdir=${TEST_SCRATCH_DIR}/content
+  mkdir -p ${contentdir}
+  tar -cf ${contentdir}/context.tar --owner=0:0 --numeric-owner -C ${tarsrc} Dockerfile
+  starthttpd ${contentdir}
+
+  run_buildah 125 build $WITH_POLICY_JSON http://0.0.0.0:${HTTP_SERVER_PORT}/context.tar
+  assert "$output" =~ "cannot find Containerfile or Dockerfile"
+  assert "$output" !~ "SECRET_CONTENT"
+}
+
+# https://github.com/podman-container-tools/buildah/issues/6861
+# https://github.com/podman-container-tools/podman/issues/28749
+@test "bud does not follow symlinked dockerignore outside context" {
+  _prefetch alpine
+
+  # dir/
+  #   ign                  <- ignore file outside context (excludes "file")
+  #   context/
+  #     Dockerfile
+  #     file
+  #     Dockerfile.dockerignore -> ../ign   (relative symlink escaping context)
+  local dir=${TEST_SCRATCH_DIR}
+  local contextdir=${dir}/context
+  mkdir -p ${contextdir}
+  echo "file" > ${dir}/ign
+
+  cat > ${contextdir}/Dockerfile << _EOF
+FROM alpine
+COPY file /dir/
+RUN test -f /dir/file
+_EOF
+  touch ${contextdir}/file
+  ln -s ../ign ${contextdir}/Dockerfile.dockerignore
+
+  run_buildah build $WITH_POLICY_JSON ${contextdir}
+}
+
+# https://github.com/podman-container-tools/buildah/issues/6861
+# https://github.com/podman-container-tools/podman/issues/28749
+@test "bud follows symlinked containerignore within context" {
+  _prefetch alpine
+
+  local contextdir=${TEST_SCRATCH_DIR}/context
+  mkdir -p ${contextdir}/conf
+  echo "file" > ${contextdir}/conf/ignore-rules
+
+  cat > ${contextdir}/Containerfile << _EOF
+FROM alpine
+COPY * /dir/
+RUN test ! -f /dir/file
+_EOF
+  touch ${contextdir}/file
+  ln -s conf/ignore-rules ${contextdir}/.containerignore
+
+  run_buildah build $WITH_POLICY_JSON ${contextdir}
 }
 
 @test "build-validates-bind-bind-propagation" {
