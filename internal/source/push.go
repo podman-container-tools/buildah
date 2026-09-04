@@ -74,7 +74,7 @@ func Push(ctx context.Context, sourcePath string, imageInput string, options Pus
 		if err != nil {
 			return fmt.Errorf("computing digest of manifest of source: %w", err)
 		}
-		if err = os.WriteFile(options.DigestFile, []byte(manifestDigest.String()), 0o644); err != nil {
+		if err = os.WriteFile(options.DigestFile, []byte(manifestDigest.String()+"\n"), 0o644); err != nil {
 			return fmt.Errorf("failed to write digest to file %q: %w", options.DigestFile, err)
 		}
 	}
