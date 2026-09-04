@@ -8183,6 +8183,18 @@ _EOF
   cmp ${TEST_SCRATCH_DIR}/image1.txt ${TEST_SCRATCH_DIR}/image2.txt
 }
 
+@test "build-pull-values" {
+  local contextdir=${TEST_SCRATCH_DIR}/context
+  mkdir $contextdir
+  cat > $contextdir/Dockerfile << EOF
+  FROM scratch
+  ADD Dockerfile /Dockerfile
+EOF
+  for value in missing ifmissing notpresent always true never false ifnewer newer ; do
+    run_buildah build --pull="${value}" $contextdir
+  done
+}
+
 # Verify: https://github.com/containers/buildah/issues/5185
 @test "build-test --mount=type=secret test from env with chroot isolation" {
   skip_if_root_environment "Need to not be root for this test to work"

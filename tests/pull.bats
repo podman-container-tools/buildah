@@ -401,3 +401,10 @@ load helpers
 
   assert "$amdiid" != "$armiid" "AMD and ARM ids should differ"
 }
+
+@test "pull-policy-values" {
+  image=quay.io/libpod/busybox
+  for value in missing ifmissing notpresent always true never false ifnewer newer ; do
+    run_buildah pull --platform=linux/amd64 --policy="${value}" "${image}"
+  done
+}
