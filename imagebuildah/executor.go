@@ -680,6 +680,9 @@ func (b *executor) buildStage(ctx context.Context, cleanupStages map[int]*stageE
 	if stageExecutor.log == nil {
 		stepCounter := 0
 		stageExecutor.log = func(format string, args ...any) {
+			if logrus.GetLevel() < logrus.WarnLevel {
+				return
+			}
 			prefix := b.logPrefix
 			if len(stages) > 1 {
 				prefix += fmt.Sprintf("[%d/%d] ", stageIndex+1, len(stages))
@@ -1266,6 +1269,9 @@ func (b *executor) Build(ctx context.Context, stages imagebuilder.Stages) (image
 				return imageID, ref, fmt.Errorf("locating just-written image %q: %w", transports.ImageName(dest), err)
 			}
 			for _, name := range img.Names {
+				if logrus.GetLevel() < logrus.WarnLevel {
+					continue
+				}
 				fmt.Fprintf(b.out, "Successfully tagged %s\n", name)
 			}
 

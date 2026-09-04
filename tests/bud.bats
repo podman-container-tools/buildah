@@ -10752,3 +10752,54 @@ _EOF
     done
   done
 }
+
+@test "bud-log-level suppresses build progress and keeps RUN output" {
+    _prefetch alpine
+    local contextdir=${TEST_SCRATCH_DIR}/bud/log-level
+    mkdir -p $contextdir
+    cat > $contextdir/Containerfile << _EOF
+FROM alpine
+RUN echo "hello from RUN"
+RUN echo "another RUN step"
+_EOF
+
+    # default log level still shows progress
+    run_buildah build $WITH_POLICY_JSON -t default -f $contextdir/Containerfile $contextdir
+    expect_output --substring "STEP 1/3"
+    expect_output --substring "hello from RUN"
+    expect_output --substring "COMMIT"
+    expect_output --substring "Successfully tagged localhost/default:latest"
+
+    # --log-level error: RUN output stays, everything else is suppressed
+    run_buildah --log-level error build $WITH_POLICY_JSON -t quiet -f $contextdir/Containerfile $contextdir
+    expect_output --substring "hello from RUN"
+    expect_output --substring "another RUN step"
+    assert "$output" "!~" "STEP"
+    assert "$output" "!~" "COMMIT"
+    assert "$output" "!~" "Successfully tagged"
+    assert "$output" "!~" "Getting image source signatures"
+    assert "$output" "!~" "Copying blob"
+    assert "$output" "!~" "Writing manifest to image destination"
+}
+
+@test "bud-log-level suppresses cache-hit messages" {
+    _prefetch alpine
+    local contextdir=${TEST_SCRATCH_DIR}/bud/log-level-cache
+    mkdir -p $contextdir
+    cat > $contextdir/Containerfile << _EOF
+FROM alpine
+RUN echo "hello from RUN"
+RUN echo "another RUN step"
+_EOF
+
+    # populate the layer cache
+    run_buildah build $WITH_POLICY_JSON --layers -t default -f $contextdir/Containerfile $contextdir
+
+    # default log level: identical build hits cache, message shows
+    run_buildah build $WITH_POLICY_JSON --layers -t default -f $contextdir/Containerfile $contextdir
+    expect_output --substring "Using cache"
+
+    # --log-level error: identical build still hits cache, but message is suppressed
+    run_buildah --log-level error build $WITH_POLICY_JSON --layers -t quiet -f $contextdir/Containerfile $contextdir
+    assert "$output" "!~" "Using cache"
+}

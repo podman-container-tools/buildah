@@ -1364,7 +1364,7 @@ func (s *stageExecutor) execute(ctx context.Context, base string) (imgID string,
 	// logCachePulled produces build log for cases when `--cache-from`
 	// is used and a valid intermediate image is pulled from remote source.
 	logCachePulled := func(cacheKey string, remote reference.Named) {
-		if !s.executor.quiet {
+		if !s.executor.quiet && logrus.GetLevel() >= logrus.WarnLevel {
 			cachePullMessage := "--> Cache pulled from remote"
 			fmt.Fprintf(s.executor.out, "%s %s\n", cachePullMessage, fmt.Sprintf("%s:%s", remote.String(), cacheKey))
 		}
@@ -1372,13 +1372,13 @@ func (s *stageExecutor) execute(ctx context.Context, base string) (imgID string,
 	// logCachePush produces build log for cases when `--cache-to`
 	// is used and a valid intermediate image is pushed tp remote source.
 	logCachePush := func(cacheKey string) {
-		if !s.executor.quiet {
+		if !s.executor.quiet && logrus.GetLevel() >= logrus.WarnLevel {
 			cachePushMessage := "--> Pushing cache"
 			fmt.Fprintf(s.executor.out, "%s %s\n", cachePushMessage, fmt.Sprintf("%s:%s", s.executor.cacheTo, cacheKey))
 		}
 	}
 	logCacheHit := func(cacheID string) {
-		if !s.executor.quiet {
+		if !s.executor.quiet && logrus.GetLevel() >= logrus.WarnLevel {
 			cacheHitMessage := "--> Using cache"
 			fmt.Fprintf(s.executor.out, "%s %s\n", cacheHitMessage, cacheID)
 		}
@@ -1387,7 +1387,7 @@ func (s *stageExecutor) execute(ctx context.Context, base string) (imgID string,
 		if len(imgID) > 12 {
 			imgID = imgID[:12]
 		}
-		if s.executor.iidfile == "" {
+		if s.executor.iidfile == "" && logrus.GetLevel() >= logrus.WarnLevel {
 			fmt.Fprintf(s.executor.out, "--> %s\n", imgID)
 		}
 	}
