@@ -16,7 +16,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/mattn/go-shellwords v1.0.14
 	github.com/moby/buildkit v0.33.0
-	github.com/moby/go-archive v0.3.3
 	github.com/moby/moby/client v0.5.1
 	github.com/moby/sys/capability v0.4.0
 	github.com/moby/sys/devices v0.1.0
@@ -98,6 +97,7 @@ require (
 	github.com/miekg/pkcs11 v1.1.2 // indirect
 	github.com/mistifyio/go-zfs/v4 v4.0.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
+	github.com/moby/go-archive v0.3.3 // indirect
 	github.com/moby/moby/api v1.55.0 // indirect
 	github.com/moby/patternmatcher v0.6.1 // indirect
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
