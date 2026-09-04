@@ -214,6 +214,21 @@ load helpers
   expect_output ""
 }
 
+@test "push with --log-level error suppresses progress output" {
+  mytmpdir=${TEST_SCRATCH_DIR}/my-dir
+  mkdir -p $mytmpdir
+
+  _prefetch alpine
+
+  # default log level: progress output shows
+  run_buildah push $WITH_POLICY_JSON alpine dir:$mytmpdir
+  expect_output --substring "Copying blob"
+
+  # --log-level error: progress output is suppressed, same as --quiet
+  run_buildah --log-level error push $WITH_POLICY_JSON alpine dir:$mytmpdir
+  expect_output ""
+}
+
 @test "push with --compression-format" {
   _prefetch alpine
   run_buildah from --quiet --pull alpine

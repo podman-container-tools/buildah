@@ -219,7 +219,7 @@ func pushCmd(c *cobra.Command, args []string, iopts pushOptions) error {
 			return fmt.Errorf("unable to parse value provided %q as --retry-delay: %w", iopts.retryDelay, err)
 		}
 	}
-	if !iopts.quiet {
+	if !iopts.quiet && logrus.GetLevel() >= logrus.WarnLevel {
 		options.ReportWriter = os.Stderr
 	}
 	defaultContainerConfig, err := config.Default()

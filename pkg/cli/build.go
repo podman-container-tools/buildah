@@ -511,7 +511,7 @@ func GenBuildOptions(c *cobra.Command, inputArgs []string, iopts BuildOptions) (
 		logrus.Debugf("Setting MaxPullPushRetries to %d and PullPushRetryDelay to %v", iopts.Retry, options.PullPushRetryDelay)
 	}
 
-	if iopts.Quiet {
+	if iopts.Quiet || logrus.GetLevel() < logrus.WarnLevel {
 		options.ReportWriter = io.Discard
 	}
 
