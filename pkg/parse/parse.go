@@ -498,6 +498,10 @@ func SystemContextFromFlagSet(flags *pflag.FlagSet, findFlagFunc func(name strin
 	if err == nil && findFlagFunc("short-name-alias-conf").Changed {
 		ctx.UserShortNameAliasConfPath = shortNameAliasConf
 	}
+	blobInfoCacheDir, err := flags.GetString("blob-info-cache-dir")
+	if err == nil && findFlagFunc("blob-info-cache-dir").Changed {
+		ctx.BlobInfoCacheDir = blobInfoCacheDir
+	}
 	ctx.DockerRegistryUserAgent = fmt.Sprintf("Buildah/%s", define.Version)
 	if findFlagFunc("os") != nil && findFlagFunc("os").Changed {
 		var os string

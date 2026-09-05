@@ -71,7 +71,9 @@ func runInit() {
 	flags.StringSliceVar(&opts.capAdd, "cap-add", []string{}, "add the specified capability (default [])")
 	flags.StringSliceVar(&opts.capDrop, "cap-drop", []string{}, "drop the specified capability (default [])")
 	flags.StringVar(&opts.cdiConfigDir, "cdi-config-dir", "", "`directory` of CDI configuration files")
-	_ = flags.MarkHidden("cdi-config-dir")
+	if err := flags.MarkHidden("cdi-config-dir"); err != nil {
+		panic(fmt.Sprintf("error marking cdi-config-dir as hidden: %v", err))
+	}
 	flags.StringVar(&opts.contextDir, "contextdir", "", "context directory path")
 	flags.StringArrayVar(&opts.devices, "device", []string{}, "additional devices to provide")
 	flags.StringArrayVarP(&opts.env, "env", "e", []string{}, "add environment variable to be set temporarily when running command (default [])")
