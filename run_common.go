@@ -1730,7 +1730,7 @@ type secretMountOrEnv struct {
 }
 
 func (b *Builder) getSecretMount(tokens []string, secrets map[string]define.Secret, idMaps IDMaps, workdir string) (_ secretMountOrEnv, retErr error) {
-	errInvalidSyntax := errors.New("secret should have syntax id=id[,target=path,required=bool,mode=uint,uid=uint,gid=uint,env=dstVarName")
+	errInvalidSyntax := errors.New("secret should have syntax id=id[,target=path,required=bool,mode=uint,uid=uint,gid=uint,env=dstVarName]")
 	if len(tokens) == 0 {
 		return secretMountOrEnv{}, errInvalidSyntax
 	}
@@ -1740,50 +1740,53 @@ func (b *Builder) getSecretMount(tokens []string, secrets map[string]define.Secr
 	var mode uint32 = 0o400
 	var rv secretMountOrEnv
 	for _, val := range tokens {
-		kv := strings.SplitN(val, "=", 2)
-		switch kv[0] {
+		key, value, hasValue := strings.Cut(val, "=")
+		if !hasValue && key != "required" {
+			return secretMountOrEnv{}, errInvalidSyntax
+		}
+		switch key {
 		case "type":
 			// This is already processed
 			continue
 		case "id":
-			id = kv[1]
+			id = value
 		case "target", "dst", "destination":
-			target = kv[1]
+			target = value
 			if !filepath.IsAbs(target) {
 				target = filepath.Join(workdir, target)
 			}
 		case "required":
 			required = true
-			if len(kv) > 1 {
+			if hasValue {
 				var err error
-				required, err = strconv.ParseBool(kv[1])
+				required, err = strconv.ParseBool(value)
 				if err != nil {
 					return secretMountOrEnv{}, errInvalidSyntax
 				}
 			}
 		case "mode":
-			mode64, err := strconv.ParseUint(kv[1], 8, 32)
+			mode64, err := strconv.ParseUint(value, 8, 32)
 			if err != nil {
 				return secretMountOrEnv{}, errInvalidSyntax
 			}
 			mode = uint32(mode64)
 		case "uid":
-			uid64, err := strconv.ParseUint(kv[1], 10, 32)
+			uid64, err := strconv.ParseUint(value, 10, 32)
 			if err != nil {
 				return secretMountOrEnv{}, errInvalidSyntax
 			}
 			uid = uint32(uid64)
 		case "gid":
-			gid64, err := strconv.ParseUint(kv[1], 10, 32)
+			gid64, err := strconv.ParseUint(value, 10, 32)
 			if err != nil {
 				return secretMountOrEnv{}, errInvalidSyntax
 			}
 			gid = uint32(gid64)
 		case "env":
-			if kv[1] == "" {
+			if value == "" {
 				return secretMountOrEnv{}, errInvalidSyntax
 			}
-			env = kv[1]
+			env = value
 		default:
 			return secretMountOrEnv{}, errInvalidSyntax
 		}

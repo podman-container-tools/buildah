@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.podman.io/buildah/define"
 )
 
 func TestMapContainerNameToHostname(t *testing.T) {
@@ -66,4 +67,78 @@ func TestCheckExitCodeError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetSecretMount(t *testing.T) {
+	const invalidSyntax = "secret should have syntax id=id[,target=path,required=bool,mode=uint,uid=uint,gid=uint,env=dstVarName]"
+
+	t.Run("valid-options", func(t *testing.T) {
+		validOptions := []struct {
+			name   string
+			tokens []string
+		}{
+			{"id-only", []string{"type=secret", "id=example"}},
+			{"absolute-target", []string{"type=secret", "id=example", "target=/run/secrets/example"}},
+			{"relative-target", []string{"type=secret", "id=example", "target=secret"}},
+			{"mode", []string{"type=secret", "id=example", "mode=0400"}},
+			{"ownership-and-required", []string{"type=secret", "id=example", "uid=1000", "gid=1000", "required=false"}},
+			{"environment", []string{"type=secret", "id=example", "env=SECRET"}},
+		}
+		for i := range validOptions {
+			t.Run(validOptions[i].name, func(t *testing.T) {
+				_, err := (&Builder{}).getSecretMount(validOptions[i].tokens, map[string]define.Secret{}, IDMaps{}, "/work")
+				require.NoError(t, err)
+			})
+		}
+	})
+
+	t.Run("bare-required", func(t *testing.T) {
+		_, err := (&Builder{}).getSecretMount([]string{"type=secret", "id=example", "required"}, map[string]define.Secret{}, IDMaps{}, "/work")
+		require.EqualError(t, err, `secret required but no secret with id "example" found`)
+	})
+
+	t.Run("target-provides-id", func(t *testing.T) {
+		_, err := (&Builder{}).getSecretMount([]string{"type=secret", "target=secret", "required=true"}, map[string]define.Secret{}, IDMaps{}, "/work")
+		require.EqualError(t, err, `secret required but no secret with id "secret" found`)
+	})
+
+	t.Run("required-true", func(t *testing.T) {
+		t.Setenv("BUILDAH_TEST_SECRET", "secret-value")
+		secrets := map[string]define.Secret{
+			"example": {
+				ID:         "example",
+				Source:     "BUILDAH_TEST_SECRET",
+				SourceType: "env",
+			},
+		}
+		result, err := (&Builder{}).getSecretMount([]string{"type=secret", "id=example", "required=true", "env=SECRET_VALUE"}, secrets, IDMaps{}, "/work")
+		require.NoError(t, err)
+		require.Equal(t, "SECRET_VALUE=secret-value", result.EnvVariable)
+	})
+
+	t.Run("invalid-options", func(t *testing.T) {
+		invalidOptions := []string{
+			"type",
+			"id",
+			"target",
+			"dst",
+			"destination",
+			"mode",
+			"uid",
+			"gid",
+			"env",
+			"id=",
+			"env=",
+			"required=invalid",
+			"mode=invalid",
+			"uid=invalid",
+			"gid=invalid",
+		}
+		for i := range invalidOptions {
+			t.Run(invalidOptions[i], func(t *testing.T) {
+				_, err := (&Builder{}).getSecretMount([]string{"type=secret", invalidOptions[i]}, map[string]define.Secret{}, IDMaps{}, "/work")
+				require.EqualError(t, err, invalidSyntax)
+			})
+		}
+	})
 }
