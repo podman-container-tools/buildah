@@ -78,6 +78,11 @@ can be used.
 
 Path to an alternative .containerignore (.dockerignore) file. Requires \-\-contextdir be specified.
 
+**--keep-git-dir**
+
+When the source is a remote git repository, keep the cloned `.git` directory
+instead of stripping it out. Only meaningful for git sources. Defaults to false.
+
 **--link**
 
 Create an independent image layer for the added files instead of modifying the working
