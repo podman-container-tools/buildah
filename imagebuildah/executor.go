@@ -103,6 +103,7 @@ type executor struct {
 	in                             io.Reader
 	inheritLabels                  types.OptionalBool
 	inheritAnnotations             types.OptionalBool
+	inheritLayerAnnotations        types.OptionalBool
 	out                            io.Writer
 	err                            io.Writer
 	signaturePolicyPath            string
@@ -321,6 +322,7 @@ func newExecutor(logger *logrus.Logger, logPrefix string, store storage.Store, o
 		isolation:                               options.Isolation,
 		inheritLabels:                           options.InheritLabels,
 		inheritAnnotations:                      options.InheritAnnotations,
+		inheritLayerAnnotations:                 options.InheritLayerAnnotations,
 		namespaceOptions:                        options.NamespaceOptions,
 		configureNetwork:                        options.ConfigureNetwork,
 		networkInterface:                        options.NetworkInterface,

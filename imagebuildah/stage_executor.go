@@ -1407,7 +1407,7 @@ func (s *stageExecutor) execute(ctx context.Context, base string) (imgID string,
 
 	if len(children) == 0 {
 		// There are no steps.
-		if s.builder.FromImageID == "" || s.executor.squash || s.executor.confidentialWorkload.Convert || len(s.executor.annotations) > 0 || len(s.executor.unsetEnvs) > 0 || len(s.executor.unsetLabels) > 0 || len(s.executor.sbomScanOptions) > 0 || len(s.executor.unsetAnnotations) > 0 || s.executor.inheritLabels == types.OptionalBoolFalse || s.executor.inheritAnnotations == types.OptionalBoolFalse {
+		if s.builder.FromImageID == "" || s.executor.squash || s.executor.confidentialWorkload.Convert || len(s.executor.annotations) > 0 || len(s.executor.unsetEnvs) > 0 || len(s.executor.unsetLabels) > 0 || len(s.executor.sbomScanOptions) > 0 || len(s.executor.unsetAnnotations) > 0 || s.executor.inheritLabels == types.OptionalBoolFalse || s.executor.inheritAnnotations == types.OptionalBoolFalse || s.executor.inheritLayerAnnotations == types.OptionalBoolFalse {
 			// We either don't have a base image, or we need to
 			// transform the contents of the base image, or we need
 			// to make some changes to just the config blob.  Whichever
@@ -2690,6 +2690,9 @@ func (s *stageExecutor) commit(ctx context.Context, createdBy string, emptyLayer
 			// inherit annotations from base image.
 			s.builder.ClearAnnotations()
 		}
+		if s.executor.inheritLayerAnnotations == types.OptionalBoolFalse {
+			s.builder.ClearLayerAnnotations()
+		}
 		// Add new annotations to the last step.
 		for _, annotationSpec := range s.executor.annotations {
 			annotationk, annotationv, _ := strings.Cut(annotationSpec, "=")
@@ -2813,12 +2816,13 @@ func (s *stageExecutor) EnsureContainerPathAs(path, user string, mode *os.FileMo
 // processing.  Any flags that affect the output image in a way that affects
 // whether or not it should be used as a cache hit for another build with that
 // flag set differently should be reflected in its result.  Some build settings
-// only take affect at the final step, so only note those when they're applied.
+// only take effect at the final step, so only note those when they're applied.
 func (s *stageExecutor) buildMetadata(isLastStep bool, isAddOrCopy bool) string {
 	var unsetLabels strings.Builder
 	inheritLabels := ""
 	var unsetAnnotations strings.Builder
 	inheritAnnotations := ""
+	inheritLayerAnnotations := ""
 	newAnnotations := ""
 	layerMutations := ""
 
@@ -2838,6 +2842,9 @@ func (s *stageExecutor) buildMetadata(isLastStep bool, isAddOrCopy bool) string 
 		// If --inherit-annotation was manually set to false then we cleared the inherited annotations.
 		if s.executor.inheritAnnotations == types.OptionalBoolFalse {
 			inheritAnnotations = "|inheritAnnotations=false"
+		}
+		if s.executor.inheritLayerAnnotations == types.OptionalBoolFalse {
+			inheritLayerAnnotations = "|inheritLayerAnnotations=false"
 		}
 		// If new annotations are added, they must be added as part of the last step of the build,
 		// so mention in history that new annotations were added in order to make sure that subsequent builds
@@ -2866,7 +2873,7 @@ func (s *stageExecutor) buildMetadata(isLastStep bool, isAddOrCopy bool) string 
 	}
 
 	if isAddOrCopy {
-		return unsetLabels.String() + " " + inheritLabels + " " + unsetAnnotations.String() + " " + inheritAnnotations + " " + layerMutations + " " + newAnnotations
+		return unsetLabels.String() + " " + inheritLabels + " " + unsetAnnotations.String() + " " + inheritAnnotations + " " + inheritLayerAnnotations + " " + layerMutations + " " + newAnnotations
 	}
-	return unsetLabels.String() + inheritLabels + unsetAnnotations.String() + inheritAnnotations + layerMutations + newAnnotations
+	return unsetLabels.String() + inheritLabels + unsetAnnotations.String() + inheritAnnotations + inheritLayerAnnotations + layerMutations + newAnnotations
 }

@@ -11,12 +11,14 @@ import (
 	"time"
 
 	"github.com/containerd/platforms"
+	digest "github.com/opencontainers/go-digest"
 	ociv1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	"go.podman.io/buildah/define"
 	"go.podman.io/buildah/docker"
 	internalUtil "go.podman.io/buildah/internal/util"
 	"go.podman.io/image/v5/manifest"
+	"go.podman.io/image/v5/pkg/blobinfocache"
 	"go.podman.io/image/v5/pkg/compression"
 	"go.podman.io/image/v5/transports"
 	"go.podman.io/image/v5/types"
@@ -97,6 +99,30 @@ func (b *Builder) initConfig(ctx context.Context, sys *types.SystemContext, img 
 					b.ImageAnnotations = make(map[string]string, len(v1Manifest.Annotations))
 				}
 				maps.Copy(b.ImageAnnotations, v1Manifest.Annotations)
+			}
+
+			// Get layer annotations if present.
+			diffIDs := b.OCIv1.RootFS.DiffIDs
+			cache := blobinfocache.DefaultCache(sys)
+			for i, l := range v1Manifest.Layers {
+				if len(l.Annotations) == 0 {
+					continue
+				}
+
+				diffID := cache.UncompressedDigest(l.Digest)
+				// Fallback for a cache miss: try lookup by index.
+				if diffID == "" && i < len(diffIDs) {
+					diffID = diffIDs[i]
+				}
+				if diffID == "" {
+					logrus.Warnf("Cannot determine diffID for layer %s, skipping layer annotations", l.Digest)
+					continue
+				}
+
+				if b.ImageLayerAnnotations == nil {
+					b.ImageLayerAnnotations = make(map[digest.Digest]map[string]string, len(v1Manifest.Layers))
+				}
+				b.ImageLayerAnnotations[diffID] = maps.Clone(l.Annotations)
 			}
 		}
 	} else {
@@ -194,6 +220,32 @@ func (b *Builder) UnsetAnnotation(key string) {
 // manifest.
 func (b *Builder) ClearAnnotations() {
 	b.ImageAnnotations = nil
+}
+
+// ClearLayerAnnotations removes all inherited per-layer annotations.
+func (b *Builder) ClearLayerAnnotations() {
+	b.ImageLayerAnnotations = nil
+}
+
+// SetTopLayerAnnotation sets a per-layer annotation
+// for the top-most (read-write) layer.
+func (b *Builder) SetTopLayerAnnotation(key, value string) {
+	if b.TopLayerAnnotations == nil {
+		b.TopLayerAnnotations = make(map[string]string)
+	}
+	b.TopLayerAnnotations[key] = value
+}
+
+// UnsetTopLayerAnnotation removes a per-layer annotation from the
+// top-most (read-write) layer if present.
+func (b *Builder) UnsetTopLayerAnnotation(key string) {
+	delete(b.TopLayerAnnotations, key)
+}
+
+// ClearTopLayerAnnotations removes all per-layer annotations from
+// the top-most (read-write) layer.
+func (b *Builder) ClearTopLayerAnnotations() {
+	b.TopLayerAnnotations = nil
 }
 
 // CreatedBy returns a description of how this image was built.

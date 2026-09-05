@@ -695,7 +695,7 @@ load helpers
   which skopeo || skip "skopeo is not installed"
   _prefetch alpine
   run_buildah from $WITH_POLICY_JSON alpine
-  cid=$output
+  local cid=$output
   run_buildah run $cid touch /testfile
 
   local confdir=${TEST_SCRATCH_DIR}/commit-conf-zstd
@@ -720,4 +720,42 @@ _EOF
     "manifest should reference zstd-compressed layers per containers.conf"
   assert "$output" !~ "gzip" \
     "manifest should NOT reference gzip layers when containers.conf specifies zstd"
+}
+
+@test "commit preserves layer annotations" {
+  local base_image=$(build_oci_image_with_layer_annotations \
+    '"test.annotation.first": "value1",' \
+    '"test.annotation.second": "value2"')
+
+  # Start with an image with layer annotations present.
+  run_buildah from --quiet $WITH_POLICY_JSON ${base_image}
+  local cid=$output
+
+  # Read the layer annotations and save them for verification.
+  run_buildah inspect --type=image --format '{{.Manifest}}' ${base_image}
+  local base_annotations=$(jq '[.layers[].annotations]' <<<"$output")
+  local base_layer_count=$(jq '.layers | length' <<<"$output")
+  local annotations_count=$(jq '[.layers[].annotations | select(. != null)] | length' <<<"$output")
+  assert "$annotations_count" -ge 1 "base image should have at least one layer with annotations"
+
+  # Add a layer and commit.
+  run_buildah copy $cid /dev/null /testfile
+  run_buildah commit $WITH_POLICY_JSON $cid committed-img
+
+  # Verify that layer annotations are preserved in the committed image.
+  run_buildah inspect --type=image --format '{{.Manifest}}' committed-img
+  local committed_manifest="$output"
+  for ((i = 0; i < base_layer_count; i++)); do
+    local expected
+    expected=$(jq -c ".[$i]" <<<"$base_annotations")
+    run jq -c ".layers[$i].annotations" <<<"$committed_manifest"
+    assert "$output" = "$expected" \
+      "layer $i annotations should be preserved after commit"
+  done
+
+  # Verify that the newly added layer has no annotations.
+  run jq -c ".layers[$base_layer_count].annotations" <<<"$committed_manifest"
+  assert "$status" -eq 0 "jq failed parsing new layer annotations"
+  assert "$output" = "null" \
+    "new layer should not have base-image annotations"
 }

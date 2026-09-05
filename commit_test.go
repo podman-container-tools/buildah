@@ -660,3 +660,98 @@ func TestCommitChmod(t *testing.T) {
 		require.ErrorIs(t, err, io.EOF)
 	}
 }
+
+// TestCommitLayerAnnotations verifies that
+// layer annotations from a source image
+// are not lost on commit and are retained
+// in the final image layers.
+func TestCommitLayerAnnotations(t *testing.T) {
+	ctx := context.TODO()
+	graphDriverName := os.Getenv("STORAGE_DRIVER")
+	if graphDriverName == "" {
+		graphDriverName = "vfs"
+	}
+	t.Logf("using storage driver %q", graphDriverName)
+	store, err := storage.GetStore(storageTypes.StoreOptions{
+		RunRoot:         t.TempDir(),
+		GraphRoot:       t.TempDir(),
+		GraphDriverName: graphDriverName,
+	})
+	require.NoError(t, err, "initializing storage")
+	t.Cleanup(func() { _, err := store.Shutdown(true); assert.NoError(t, err) })
+
+	// Build a source image with one layer.
+	b, err := NewBuilder(ctx, store, BuilderOptions{
+		FromImage: "scratch",
+		NamespaceOptions: []NamespaceOption{{
+			Name: string(rspec.NetworkNamespace),
+			Host: true,
+		}},
+		SystemContext: &testSystemContext,
+	})
+	require.NoError(t, err, "creating builder for source image")
+	file1 := makeFile(t, "file1", 0)
+	err = b.Add("/", false, AddAndCopyOptions{}, file1)
+	require.NoError(t, err, "adding file to source image")
+	const sourceImageName = "image1"
+	baseRef, err := imageStorage.Transport.ParseStoreReference(store, sourceImageName)
+	require.NoError(t, err, "parsing reference for source image")
+	_, _, _, err = b.Commit(ctx, baseRef, CommitOptions{
+		PreferredManifestType: v1.MediaTypeImageManifest,
+		SystemContext:         &testSystemContext,
+	})
+	require.NoError(t, err, "committing source image")
+
+	// Build a derived image from the source one.
+	b, err = NewBuilder(ctx, store, BuilderOptions{
+		FromImage: sourceImageName,
+		NamespaceOptions: []NamespaceOption{{
+			Name: string(rspec.NetworkNamespace),
+			Host: true,
+		}},
+		SystemContext: &testSystemContext,
+	})
+	require.NoError(t, err, "creating builder for derived image")
+
+	// Set the layer annotations.
+	diffID := b.OCIv1.RootFS.DiffIDs[0]
+	inputAnnotations := map[string]string{
+		"k1": "v1",
+		"k2": "v2",
+	}
+	b.ImageLayerAnnotations = map[digest.Digest]map[string]string{
+		diffID: inputAnnotations,
+	}
+
+	// Add a file.
+	file2 := makeFile(t, "file2", 0)
+	err = b.Add("/", false, AddAndCopyOptions{}, file2)
+	require.NoError(t, err, "adding file to derived image")
+
+	// Commit.
+	committedLayoutDir := t.TempDir()
+	committedRef, err := ociLayout.ParseReference(committedLayoutDir)
+	require.NoError(t, err, "parsing reference for image")
+	_, _, _, err = b.Commit(ctx, committedRef, CommitOptions{
+		PreferredManifestType: v1.MediaTypeImageManifest,
+		SystemContext:         &testSystemContext,
+	})
+	require.NoError(t, err, "committing derived image")
+
+	// Read the manifest back.
+	src, err := committedRef.NewImageSource(ctx, &testSystemContext)
+	require.NoError(t, err, "opening committed image")
+	defer src.Close()
+	manifestBytes, manifestType, err := src.GetManifest(ctx, nil)
+	require.NoError(t, err, "reading manifest")
+	require.Equal(t, v1.MediaTypeImageManifest, manifestType)
+	parsedManifest, err := manifest.OCI1FromManifest(manifestBytes)
+	require.NoError(t, err, "parsing manifest")
+	require.Len(t, parsedManifest.Layers, 2, "expected two layers")
+
+	// Verify that the first layer have the input annotations preserved.
+	assert.Equal(t, inputAnnotations, parsedManifest.Layers[0].Annotations, "annotations must be preserved")
+
+	// Verify that the second layer (new content) has no annotations.
+	assert.Nil(t, parsedManifest.Layers[1].Annotations, "new layer should have no annotations")
+}
