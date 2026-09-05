@@ -4255,6 +4255,24 @@ _EOF
   expect_output --substring "chmod:777 user:2367 group:3267"
 }
 
+@test "bud with symbolic chmod copy" {
+  _prefetch alpine
+  imgName=alpine-symbolic-chmod
+  run_buildah build $WITH_POLICY_JSON -t ${imgName} $BUDFILES/copy-chmod-symbolic
+  # u+x,go-rwx on a 0644 source -> 0700; a+rX,go-w keeps an executable 0755;
+  # a+rX alone on a 0644 source leaves it 0644 (conditional X adds nothing)
+  expect_output --substring "sym1:700"
+  expect_output --substring "sym2:755"
+  expect_output --substring "sym3:644"
+}
+
+@test "bud with bad symbolic chmod copy" {
+  _prefetch alpine
+  imgName=alpine-symbolic-chmod
+  run_buildah 125 build $WITH_POLICY_JSON -t ${imgName} -f $BUDFILES/copy-chmod-symbolic/Dockerfile.bad $BUDFILES/copy-chmod-symbolic
+  expect_output --substring "parsing chmod"
+}
+
 @test "bud with chown copy with bad chown flag in Dockerfile with --layers" {
   _prefetch alpine
   imgName=alpine-image
