@@ -1267,6 +1267,9 @@ func (s *stageExecutor) getImageRootfs(ctx context.Context, image string) (mount
 // typically in the form "file", "dir", or "multi" followed by a colon and the hex part of the
 // digest of the content, for inclusion in the corresponding history entry's "createdBy" field
 func (s *stageExecutor) getContentSummaryAfterAddingContent() string {
+	if s.builder == nil {
+		return ""
+	}
 	contentType, digest := s.builder.ContentDigester.Digest()
 	summary := contentType
 	if digest != "" {
