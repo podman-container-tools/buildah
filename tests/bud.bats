@@ -8251,8 +8251,9 @@ _EOF
   cat > $contextdir/Dockerfile << _EOF
 FROM quay.io/hummingbird/git
 USER 0:0
-ADD http://0.0.0.0:${HTTP_SERVER_PORT}/git/podman.git#v5.0 /podman-branch
-ADD http://0.0.0.0:${HTTP_SERVER_PORT}/git/podman.git#v5.0.0 /podman-tag
+ADD --keep-git-dir=true http://0.0.0.0:${HTTP_SERVER_PORT}/git/podman.git#v5.0 /podman-branch
+ADD --keep-git-dir=true http://0.0.0.0:${HTTP_SERVER_PORT}/git/podman.git#v5.0.0 /podman-tag
+ADD --keep-git-dir=false http://0.0.0.0:${HTTP_SERVER_PORT}/git/podman.git#v5.0 /podman-branch-without-git-dir
 _EOF
 
   run_buildah build -f $contextdir/Dockerfile -t git-image $contextdir
@@ -8267,6 +8268,8 @@ _EOF
   local_head_hash=$output
   run_buildah run --network=host testctr -- sh -c 'git -C /podman-tag ls-remote --tags origin v5.0.0 | cut -f1'
   assert "$output" = "$local_head_hash"
+
+  run_buildah run testctr -- test ! -d /podman-branch-without-git-dir/.git
 
   cat > $contextdir/Dockerfile << _EOF
 FROM scratch

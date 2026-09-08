@@ -46,6 +46,7 @@ type addCopyResults struct {
 	allowWildcard      bool
 	allowEmptyWildcard bool
 	noFollowSymlinks   bool
+	keepGitDir         bool
 }
 
 func createCommand(addCopy string, desc string, short string, opts *addCopyResults) *cobra.Command {
@@ -127,6 +128,7 @@ func addcopyInit() {
 
 	addFlags := addCommand.Flags()
 	applyFlagVars(addFlags, &addOpts)
+	addFlags.BoolVar(&addOpts.keepGitDir, "keep-git-dir", false, "keep the .git directory when adding a git repository source")
 
 	copyFlags := copyCommand.Flags()
 	applyFlagVars(copyFlags, &copyOpts)
@@ -297,6 +299,7 @@ func addAndCopyCmd(c *cobra.Command, args []string, verb string, iopts addCopyRe
 		Timestamp:             timestamp,
 		Link:                  iopts.link,
 		FollowSymlink:         followSymlink,
+		KeepGitDir:            iopts.keepGitDir,
 	}
 	if iopts.contextdir != "" {
 		var excludes []string
