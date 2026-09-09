@@ -162,8 +162,10 @@ func BuildDockerfiles(ctx context.Context, store storage.Store, options define.B
 			data = contents
 		}
 
-		// pre-process Dockerfiles with ".in" suffix
-		if strings.HasSuffix(dfile, ".in") {
+		// pre-process Dockerfiles with ".in" suffix, if --preprocess is specified, or if BUILDAH_PREPROCESS is set
+		preprocessSpecified := options.Preprocess == types.OptionalBoolTrue
+		preprocessInferred := (options.Preprocess == types.OptionalBoolUndefined) && strings.HasSuffix(dfile, ".in")
+		if preprocessSpecified || preprocessInferred {
 			pData, err := preprocessContainerfileContents(logger, dfile, data, options.ContextDirectory, options.CPPFlags)
 			if err != nil {
 				return "", nil, err

@@ -274,6 +274,8 @@ type BuildOptions struct {
 	CommonBuildOpts *CommonBuildOptions
 	// CPPFlags are additional arguments to pass to the C Preprocessor (cpp).
 	CPPFlags []string
+	// Preprocess tells the builder to run the C Preprocessor (cpp) regardless of the file extension.
+	Preprocess types.OptionalBool
 	// DefaultMountsFilePath is the file path holding the mounts to be mounted for RUN
 	// instructions in "host-path:container-path" format
 	DefaultMountsFilePath string
