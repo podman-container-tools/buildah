@@ -126,6 +126,10 @@ type AddAndCopyOptions struct {
 	// FollowSymlink controls whether symlinks should be followed when copying content.
 	// When set to false, symlinks are not dereferenced.
 	FollowSymlink types.OptionalBool
+	// Includes is a list of patterns to include, the complement to Excludes.
+	// Only items matching one of these patterns are copied. Has the same
+	// pattern format as lines of a .containerignore file.
+	Includes []string
 }
 
 // getURL writes a tar archive containing the named content
@@ -608,6 +612,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 						UIDMap:             srcUIDMap,
 						GIDMap:             srcGIDMap,
 						Excludes:           options.Excludes,
+						Includes:           options.Includes,
 						ExpandArchives:     extract,
 						Chmod:              options.Chmod,
 						ChownDirs:          chownDirs,
@@ -774,6 +779,7 @@ func (b *Builder) Add(destination string, extract bool, options AddAndCopyOption
 					UIDMap:             srcUIDMap,
 					GIDMap:             srcGIDMap,
 					Excludes:           options.Excludes,
+					Includes:           options.Includes,
 					ExpandArchives:     extract,
 					Chmod:              options.Chmod,
 					ChownDirs:          chownDirs,
