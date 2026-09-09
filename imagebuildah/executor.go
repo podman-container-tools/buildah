@@ -536,6 +536,11 @@ func (b *executor) waitForStage(ctx context.Context, name string, stages imagebu
 		b.stagesSemaphore.Release(1)
 		time.Sleep(time.Millisecond * 10)
 		if err := b.stagesSemaphore.Acquire(ctx, 1); err != nil {
+			// Cancelled ctx: Acquire returns without taking a token.
+			// Reacquire so the caller's deferred Release does not panic.
+			if acqErr := b.stagesSemaphore.Acquire(context.Background(), 1); acqErr != nil {
+				return true, fmt.Errorf("reacquiring job semaphore: %w (then %w)", err, acqErr)
+			}
 			return true, fmt.Errorf("reacquiring job semaphore: %w", err)
 		}
 	}
