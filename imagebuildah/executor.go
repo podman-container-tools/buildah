@@ -829,8 +829,24 @@ func (b *executor) Build(ctx context.Context, stages imagebuilder.Stages) (image
 		b.out = io.Discard
 	}
 
+	// Assigned once the per-stage goroutines have been started, so that cleanup below can wait
+	// for them. Declared here because cleanup is defined before the stages are launched.
+	var stagesWaitGroup *sync.WaitGroup
+
 	cleanup := func() error {
 		var lastErr error
+
+		// A stage reporting an error makes Build return immediately, while the other stages
+		// may still be running. Deleting their working containers here pulls the filesystem
+		// out from under them: the stage either dereferences the builder that Delete just
+		// cleared, crashing the process, or fails with "layer not known" partway through an
+		// instruction. Wait for the stages to stop before deleting anything they might still
+		// be using. The result channel is buffered with one slot per stage, so a stage can
+		// always report and exit without a reader, and this cannot deadlock.
+		if stagesWaitGroup != nil {
+			stagesWaitGroup.Wait()
+		}
+
 		// Clean up any containers associated with the final container
 		// built by a stage, for stages that succeeded, since we no
 		// longer need their filesystem contents.
@@ -1125,6 +1141,7 @@ func (b *executor) Build(ctx context.Context, stages imagebuilder.Stages) (image
 
 	var wg sync.WaitGroup
 	wg.Add(len(stages))
+	stagesWaitGroup = &wg
 
 	var commitResults buildah.CommitResults
 	go func() {

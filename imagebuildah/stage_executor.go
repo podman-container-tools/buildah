@@ -1920,6 +1920,14 @@ func (s *stageExecutor) execute(ctx context.Context, base string) (imgID string,
 		rebase = moreInstructions || rootfsIsUsedLater
 
 		if rebase {
+			// Our working container is gone if the build was torn down while this
+			// stage was still running, which Delete signals by clearing the builder.
+			// Fail the stage rather than dereferencing it and taking the process with
+			// us; the executor reports this like any other stage error.
+			if s.builder == nil {
+				return "", nil, false, fmt.Errorf("stage %q: working container was deleted while the stage was still running", s.name)
+			}
+
 			// Since we either committed the working container or
 			// are about to replace it with one based on a cached
 			// image, add the current working container's ID to the
