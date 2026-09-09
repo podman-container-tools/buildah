@@ -121,15 +121,29 @@ func onBuild(builder *buildah.Builder, quiet bool) error {
 			fmt.Fprintf(os.Stderr, "STEP %d: %s\n", ctr, onBuildSpec)
 		}
 		switch command {
-		case "ADD":
-		case "COPY":
+		case "ADD", "COPY":
 			dest := ""
 			size := len(args)
 			if size > 1 {
 				dest = args[size-1]
 				args = args[:size-1]
 			}
-			if err := builder.Add(dest, command == "ADD", buildah.AddAndCopyOptions{}, args...); err != nil {
+			var options buildah.AddAndCopyOptions
+			for len(args) > 0 && strings.HasPrefix(args[0], "--") {
+				flag := args[0]
+				switch {
+				case strings.HasPrefix(flag, "--chown="):
+					options.Chown = strings.TrimPrefix(flag, "--chown=")
+				case strings.HasPrefix(flag, "--chmod="):
+					options.Chmod = strings.TrimPrefix(flag, "--chmod=")
+				case command == "ADD" && strings.HasPrefix(flag, "--checksum="):
+					options.Checksum = strings.TrimPrefix(flag, "--checksum=")
+				default:
+					return fmt.Errorf("unrecognized flag %q in onbuild command", flag)
+				}
+				args = args[1:]
+			}
+			if err := builder.Add(dest, command == "ADD", options, args...); err != nil {
 				return err
 			}
 		case "ANNOTATION":

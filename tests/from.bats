@@ -639,3 +639,51 @@ load helpers
   run_buildah run ${cid2} hostname -f
   expect_output "${cid2:0:12}"
 }
+
+@test "from-onbuild-copy-chown-chmod" {
+  mkdir -p ${TEST_SCRATCH_DIR}/onbuild-src
+  echo test > ${TEST_SCRATCH_DIR}/onbuild-src/file1
+  echo test > ${TEST_SCRATCH_DIR}/onbuild-src/file2
+
+  run_buildah from --quiet $WITH_POLICY_JSON scratch
+  cid=$output
+  run_buildah config --onbuild "COPY --chown=1:1 file1 /file1" --onbuild "COPY --chmod=0640 file2 /file2" $cid
+  run_buildah commit $WITH_POLICY_JSON --format docker $cid onbuild-copy-flags
+  run_buildah rm $cid
+
+  pushd ${TEST_SCRATCH_DIR}/onbuild-src > /dev/null
+  run_buildah from --quiet --cidfile ${TEST_SCRATCH_DIR}/cid $WITH_POLICY_JSON onbuild-copy-flags
+  popd > /dev/null
+  cid=$(< ${TEST_SCRATCH_DIR}/cid)
+
+  run_buildah_mount ${cid}
+  root=$output
+  run stat -c '%u:%g' ${root}/file1
+  expect_output "1:1"
+  run stat -c '%a' ${root}/file2
+  expect_output "640"
+  run_buildah_umount ${cid}
+}
+
+@test "from-onbuild-add-honors-chown" {
+  mkdir -p ${TEST_SCRATCH_DIR}/onbuild-src
+  echo test > ${TEST_SCRATCH_DIR}/onbuild-src/file1
+
+  run_buildah from --quiet $WITH_POLICY_JSON scratch
+  cid=$output
+  run_buildah config --onbuild "ADD --chown=1:1 file1 /file1" $cid
+  run_buildah commit $WITH_POLICY_JSON --format docker $cid onbuild-add-chown
+  run_buildah rm $cid
+
+  pushd ${TEST_SCRATCH_DIR}/onbuild-src > /dev/null
+  run_buildah from --quiet --cidfile ${TEST_SCRATCH_DIR}/cid $WITH_POLICY_JSON onbuild-add-chown
+  popd > /dev/null
+  cid=$(< ${TEST_SCRATCH_DIR}/cid)
+
+  run_buildah_mount ${cid}
+  root=$output
+  test -e ${root}/file1
+  run stat -c '%u:%g' ${root}/file1
+  expect_output "1:1"
+  run_buildah_umount ${cid}
+}
