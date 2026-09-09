@@ -183,9 +183,14 @@ func writeToDirectory(root string, hdr *tar.Header, content io.Reader) error {
 // ImageName limits which image transports we'll accept.  For those it accepts
 // which refer to filesystem objects, where relative path names are evaluated
 // relative to "contextDir", it will create a copy of the original image, under
-// "tmpdir", which contains no symbolic links.  It it returns a parseable
+// "tmpdir", which contains no symbolic links.  It returns a parseable
 // reference to the image which should be used.
-func ImageName(store storage.Store, transportName, restOfImageName, contextDir, tmpdir string) (newFrom string, err error) {
+//
+// When allowAbsolutePaths is true and the image path is absolute, it is read
+// directly from the host filesystem (e.g. for paths supplied via --from).
+// Archive contents are still sanitized; directory-based transports are returned
+// as-is since they are read directly by the image library.
+func ImageName(store storage.Store, transportName, restOfImageName, contextDir, tmpdir string, allowAbsolutePaths bool) (newFrom string, err error) {
 	seenEntries := make(map[string]struct{})
 	// we're going to try to create a temporary directory or file, but if
 	// we fail, make sure that they get removed immediately
@@ -241,9 +246,17 @@ func ImageName(store storage.Store, transportName, restOfImageName, contextDir, 
 				}
 			}
 		}()
-		// archive only the archive file for copying to the new archive file
-		imageArchive, err = newSingleItemArchive(contextDir, archiveSource)
-		isEmbeddedArchive = true
+		if allowAbsolutePaths && filepath.IsAbs(archiveSource) {
+			var rawFile *os.File
+			rawFile, err = os.Open(archiveSource)
+			if err == nil {
+				defer rawFile.Close()
+				imageArchive, _, err = compression.AutoDecompress(rawFile)
+			}
+		} else {
+			imageArchive, err = newSingleItemArchive(contextDir, archiveSource)
+			isEmbeddedArchive = true
+		}
 		// generate the new reference using the temporary file's name
 		newFrom = transportName + ":" + newImageDestination + refLeftover
 	case ociLayoutTransport.Transport.Name(): // this is a directory tree
@@ -253,6 +266,10 @@ func ImageName(store storage.Store, transportName, restOfImageName, contextDir, 
 		archiveSource = as
 		if ok {
 			refLeftover = ":" + refLeftover
+		}
+		if allowAbsolutePaths && filepath.IsAbs(archiveSource) {
+			succeeded = true
+			return transportName + ":" + archiveSource + refLeftover, nil
 		}
 		// create a new directory to use as our new layout directory
 		if newImageDestination, err = newDirectoryDestination(tmpdir); err != nil {
@@ -266,6 +283,10 @@ func ImageName(store storage.Store, transportName, restOfImageName, contextDir, 
 	case directoryTransport.Transport.Name(): // this is also a directory tree
 		// this takes the form of just a path
 		transportRef := restOfImageName
+		if allowAbsolutePaths && filepath.IsAbs(transportRef) {
+			succeeded = true
+			return transportName + ":" + transportRef, nil
+		}
 		// create a new directory to use as our new image directory
 		if newImageDestination, err = newDirectoryDestination(tmpdir); err != nil {
 			return "", fmt.Errorf("creating temporary copy of base image: %w", err)
@@ -280,7 +301,7 @@ func ImageName(store storage.Store, transportName, restOfImageName, contextDir, 
 		return "", fmt.Errorf("unexpected container image transport %q", transportName)
 	}
 	if err != nil {
-		return "", fmt.Errorf("error archiving source at %q under %q", archiveSource, contextDir)
+		return "", fmt.Errorf("error archiving source at %q under %q: %w", archiveSource, contextDir, err)
 	}
 
 	// start reading the archived content
