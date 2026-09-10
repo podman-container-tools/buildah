@@ -764,18 +764,18 @@ func (b *Builder) AddContext(ctx context.Context, destination string, extract bo
 				renamedItems := 0
 				writer := io.WriteCloser(pipeWriter)
 				if renameTarget != "" {
-					writer = newTarFilterer(writer, func(hdr *tar.Header) (bool, bool, io.Reader) {
+					writer = newTarFilterer(writer, func(hdr *tar.Header) (tarFilterAction, bool, io.Reader) {
 						hdr.Name = renameTarget
 						renamedItems++
-						return false, false, nil
+						return tarFilterKeep, false, nil
 					})
 				}
 
 				if options.Parents {
 					parentsPrefixToRemove, parentsToSkip := getParentsPrefixToRemoveAndParentsToSkip(src, options.ContextDir)
-					writer = newTarFilterer(writer, func(hdr *tar.Header) (bool, bool, io.Reader) {
+					writer = newTarFilterer(writer, func(hdr *tar.Header) (tarFilterAction, bool, io.Reader) {
 						if slices.Contains(parentsToSkip, hdr.Name) && hdr.Typeflag == tar.TypeDir {
-							return true, false, nil
+							return tarFilterSkip, false, nil
 						}
 						hdr.Name = strings.TrimPrefix(hdr.Name, parentsPrefixToRemove)
 						hdr.Name = strings.TrimPrefix(hdr.Name, "/")
@@ -784,14 +784,14 @@ func (b *Builder) AddContext(ctx context.Context, destination string, extract bo
 							hdr.Linkname = strings.TrimPrefix(hdr.Linkname, "/")
 						}
 						if hdr.Name == "" {
-							return true, false, nil
+							return tarFilterSkip, false, nil
 						}
-						return false, false, nil
+						return tarFilterKeep, false, nil
 					})
 				}
-				writer = newTarFilterer(writer, func(_ *tar.Header) (bool, bool, io.Reader) {
+				writer = newTarFilterer(writer, func(_ *tar.Header) (tarFilterAction, bool, io.Reader) {
 					itemsCopied++
-					return false, false, nil
+					return tarFilterKeep, false, nil
 				})
 				getOptions := copier.GetOptions{
 					UIDMap:             srcUIDMap,

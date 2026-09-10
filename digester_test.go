@@ -11,6 +11,7 @@ import (
 
 	digest "github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
+	"go.podman.io/storage/pkg/ioutils"
 )
 
 func (c *CompositeDigester) isOpen() bool {
@@ -123,9 +124,9 @@ func TestCompositeDigester(t *testing.T) {
 						}
 						if filtered {
 							// wrap the WriteCloser in another WriteCloser
-							hasher = newTarFilterer(hasher, func(hdr *tar.Header) (bool, bool, io.Reader) {
+							hasher = newTarFilterer(hasher, func(hdr *tar.Header) (tarFilterAction, bool, io.Reader) {
 								hdr.ModTime = zero
-								return false, false, nil
+								return tarFilterKeep, false, nil
 							})
 							require.NotNil(t, hasher, "newTarFilterer returned a null WriteCloser?")
 						}
@@ -192,7 +193,7 @@ func TestTarFilterer(t *testing.T) {
 		name          string
 		input, output map[string]string
 		breakAfter    int
-		filter        func(*tar.Header) (bool, bool, io.Reader)
+		filter        func(*tar.Header) (tarFilterAction, bool, io.Reader)
 	}{
 		{
 			name: "none",
@@ -216,7 +217,7 @@ func TestTarFilterer(t *testing.T) {
 				"file a": "content a",
 				"file b": "content b",
 			},
-			filter: func(*tar.Header) (bool, bool, io.Reader) { return false, false, nil },
+			filter: func(*tar.Header) (tarFilterAction, bool, io.Reader) { return tarFilterKeep, false, nil },
 		},
 		{
 			name: "skip",
@@ -227,7 +228,15 @@ func TestTarFilterer(t *testing.T) {
 			output: map[string]string{
 				"file a": "content a",
 			},
-			filter: func(hdr *tar.Header) (bool, bool, io.Reader) { return hdr.Name == "file b", false, nil },
+			filter: func(hdr *tar.Header) (tarFilterAction, bool, io.Reader) {
+				var action tarFilterAction
+				if hdr.Name == "file b" {
+					action = tarFilterSkip
+				} else {
+					action = tarFilterKeep
+				}
+				return action, false, nil
+			},
 		},
 		{
 			name: "replace",
@@ -242,13 +251,13 @@ func TestTarFilterer(t *testing.T) {
 				"file c": "content c",
 			},
 			breakAfter: 2,
-			filter: func(hdr *tar.Header) (bool, bool, io.Reader) {
+			filter: func(hdr *tar.Header) (tarFilterAction, bool, io.Reader) {
 				if hdr.Name == "file b" {
 					content := "content b+c"
 					hdr.Size = int64(len(content))
-					return false, true, strings.NewReader(content)
+					return tarFilterKeep, true, strings.NewReader(content)
 				}
-				return false, false, nil
+				return tarFilterKeep, false, nil
 			},
 		},
 	}
@@ -303,4 +312,80 @@ func TestTarFilterer(t *testing.T) {
 			require.Equal(t, test.output, output, "got unexpected results")
 		})
 	}
+}
+
+func filterTar(t *testing.T, filter func(*tar.Header) (tarFilterAction, bool, io.Reader), entries [][2]string) ([][2]string, error) {
+	t.Helper()
+
+	// Build the tar archive from the entries.
+	var in bytes.Buffer
+	tw := tar.NewWriter(&in)
+	for _, e := range entries {
+		hdr := tar.Header{Name: e[0], Size: int64(len(e[1])), Typeflag: tar.TypeReg}
+		if strings.HasSuffix(e[0], "/") {
+			hdr.Typeflag = tar.TypeDir
+		}
+		require.Nil(t, tw.WriteHeader(&hdr), "writing tar header")
+		_, err := io.WriteString(tw, e[1])
+		require.Nil(t, err, "writing tar content")
+	}
+	require.Nil(t, tw.Close(), "closing tar writer")
+
+	// Run the archive through the filterer.
+	var out bytes.Buffer
+	filterer := newTarFilterer(ioutils.NopWriteCloser(&out), filter)
+	_, _ = io.Copy(filterer, &in)
+	if err := filterer.Close(); err != nil {
+		return nil, err
+	}
+
+	// Read the filtered archive.
+	var result [][2]string
+	tr := tar.NewReader(&out)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.Nil(t, err, "reading filtered tar")
+		content, err := io.ReadAll(tr)
+		require.Nil(t, err, "reading filtered content")
+		result = append(result, [2]string{hdr.Name, string(content)})
+	}
+	return result, nil
+}
+
+func TestTarFiltererDefer(t *testing.T) {
+	t.Parallel()
+
+	// deferParent defers the "parent" entry and keeps everything else.
+	deferParent := func(hdr *tar.Header) (tarFilterAction, bool, io.Reader) {
+		if strings.TrimRight(hdr.Name, "/") == "parent" {
+			return tarFilterDefer, false, nil
+		}
+		return tarFilterKeep, false, nil
+	}
+
+	// A deferred parent directory is emitted right before its child.
+	t.Run("dir-before-child", func(t *testing.T) {
+		output, err := filterTar(t, deferParent, [][2]string{
+			{"parent/", ""},
+			{"parent/child", "child content"},
+		})
+		require.Nil(t, err, "unexpected error filtering archive")
+		require.Equal(t, [][2]string{
+			{"parent/", ""},
+			{"parent/child", "child content"},
+		}, output, "deferred directory should be emitted just before its child")
+	})
+
+	// Deferring entries with non-zero size is rejected.
+	t.Run("nonzero-size-is-rejected", func(t *testing.T) {
+		_, err := filterTar(t, deferParent, [][2]string{
+			{"parent", "parent content"},
+			{"parent/child", "child content"},
+		})
+		require.Error(t, err, "expected an error deferring a non-zero-size entry")
+		require.Contains(t, err.Error(), "non-zero size", "unexpected error message")
+	})
 }
