@@ -32,6 +32,7 @@ type commitInputOptions struct {
 	authfile               string
 	omitHistory            bool
 	blobCache              string
+	blobInfoCache          string
 	certDir                string
 	changes                []string
 	compressionFormat      string
@@ -109,6 +110,10 @@ func commitListFlagSet(cmd *cobra.Command, opts *commitInputOptions) {
 	flags.StringVar(&opts.blobCache, "blob-cache", "", "assume image blobs in the specified directory will be available for pushing")
 	if err := flags.MarkHidden("blob-cache"); err != nil {
 		panic(fmt.Sprintf("error marking blob-cache as hidden: %v", err))
+	}
+	flags.StringVar(&opts.blobInfoCache, "blob-info-cache-dir", "", "cache information about blobs in the specified directory instead of the default location")
+	if err := flags.MarkHidden("blob-info-cache-dir"); err != nil {
+		panic(fmt.Sprintf("error marking blob-info-cache-dir as hidden: %v", err))
 	}
 	flags.StringSliceVar(&opts.encryptionKeys, "encryption-key", nil, "key with the encryption protocol to use needed to encrypt the image (e.g. jwe:/path/to/key.pem)")
 	_ = cmd.RegisterFlagCompletionFunc("encryption-key", completion.AutocompleteDefault)

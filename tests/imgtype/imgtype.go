@@ -52,6 +52,13 @@ func main() {
 	rebuildm := flag.Bool("rebuild-manifest", false, "rebuild the manifest JSON")
 	showc := flag.Bool("show-config", false, "output the configuration JSON")
 	rebuildc := flag.Bool("rebuild-config", false, "rebuild the configuration JSON")
+	authFile := flag.String("authfile", "", "location of credentials for accessing registries")
+	legacyAuthFile := flag.String("legacy-format-authfile", "", "location of credentials for accessing registries in legacy format")
+	blobInfoCacheDir := flag.String("blob-info-cache-dir", "", "cache information about blobs in the specified directory instead of the default location")
+
+	certDir := flag.String("cert-dir", "", "location of certificates for use with registries")
+	dockerCompatAuthFile := flag.String("docker-compat-authfile", "", "location of credentials for accessing registries in docker format")
+	tlsVerify := flag.Bool("tls-verify", true, "use HTTPS with certificate verification when accessing registries")
 	flag.Parse()
 	logrus.SetOutput(io.Discard)
 	logrus.AddHook(lslog.NewHook(slog.Default(), nil))
@@ -74,7 +81,7 @@ func main() {
 	default:
 		logrus.Errorf("unknown -expected-manifest-type value, expected either %q or %q or %q",
 			define.OCIv1ImageManifest, define.Dockerv2ImageManifest, "*")
-		return
+		os.Exit(1)
 	}
 	if root != nil {
 		storeOptions.GraphRoot = *root
@@ -98,10 +105,29 @@ func main() {
 	systemContext := &types.SystemContext{
 		SignaturePolicyPath: *policy,
 	}
+	if authFile != nil {
+		systemContext.AuthFilePath = *authFile
+	}
+	if legacyAuthFile != nil {
+		systemContext.LegacyFormatAuthFilePath = *legacyAuthFile
+	}
+	if blobInfoCacheDir != nil {
+		systemContext.BlobInfoCacheDir = *blobInfoCacheDir
+	}
+	if dockerCompatAuthFile != nil {
+		systemContext.DockerCompatAuthFilePath = *dockerCompatAuthFile
+	}
+	if certDir != nil {
+		systemContext.DockerCertPath = *certDir
+	}
+	if tlsVerify != nil {
+		systemContext.OCIInsecureSkipTLSVerify = !*tlsVerify
+		systemContext.DockerInsecureSkipTLSVerify = types.NewOptionalBool(!*tlsVerify)
+	}
 	args := flag.Args()
 	if len(args) == 0 {
 		flag.Usage()
-		return
+		os.Exit(1)
 	}
 	store, err := storage.GetStore(storeOptions)
 	if err != nil {
@@ -116,6 +142,7 @@ func main() {
 		if errors {
 			os.Exit(1)
 		}
+		os.Exit(0)
 	}()
 	for _, image := range args {
 		var ref types.ImageReference

@@ -386,7 +386,6 @@ EOF
 }
 
 @test "bud: build push with --force-compression" {
-  skip_if_no_podman
   blobcachedir=${TEST_SCRATCH_DIR}/blobcachelocal
   mkdir -p ${blobcachedir}
   local contextdir=${TEST_SCRATCH_DIR}/bud/platform
@@ -408,7 +407,7 @@ _EOF
   run_buildah login --tls-verify=false --authfile ${TEST_SCRATCH_DIR}/test.auth --username testuser --password testpassword localhost:${REGISTRY_PORT}
   run_buildah build $WITH_POLICY_JSON -t $imgname --platform linux/amd64 $contextdir
 
-  # Helper function. push our image with the given options, and run skopeo inspect
+  # Helper function. push our image with the given options, and run imgtype to inspect
   function _test_buildah_push() {
     run_buildah push \
                 --blob-cache=${blobcachedir} \
@@ -419,15 +418,12 @@ _EOF
                 $imgname \
                 docker://localhost:${REGISTRY_PORT}/$imgname
 
-    echo "# skopeo inspect $imgname"
-    run podman run --rm \
-        --mount type=bind,src=${TEST_SCRATCH_DIR}/test.auth,target=/test.auth,Z \
-        --net host \
-        quay.io/skopeo/stable inspect \
-        --authfile=/test.auth \
-        --tls-verify=false \
-        --raw \
+    echo "# imgtype -show-manifest docker://localhost:${REGISTRY_PORT}/$imgname"
+    run imgtype -show-manifest \
+        -authfile=${TEST_SCRATCH_DIR}/test.auth \
+        -tls-verify=false \
         docker://localhost:${REGISTRY_PORT}/$imgname
+    assert $status -eq 0 "imgtype failed"
     echo "$output"
   }
 
@@ -439,11 +435,11 @@ _EOF
   _test_buildah_push --compression-format zstd --force-compression=false
   assert "$output" !~ "zstd" "zstd found even though push was without --force-compression"
 
-  # layers should container `zstd`
+  # layers should contain `zstd`
   _test_buildah_push --compression-format zstd
   expect_output --substring "zstd" "layers must contain zstd compression"
 
-  # layers should container `zstd`
+  # layers should contain `zstd`
   _test_buildah_push --compression-format zstd --force-compression
   expect_output --substring "zstd" "layers must contain zstd compression"
 }

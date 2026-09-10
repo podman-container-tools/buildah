@@ -28,6 +28,7 @@ type pushOptions struct {
 	all                    bool
 	authfile               string
 	blobCache              string
+	blobInfoCache          string
 	certDir                string
 	creds                  string
 	digestfile             string
@@ -86,6 +87,10 @@ func pushInit() {
 	flags.BoolVar(&opts.all, "all", false, "push all of the images referenced by the manifest list")
 	flags.StringVar(&opts.authfile, "authfile", auth.GetDefaultAuthFile(), "path of the authentication file. Use REGISTRY_AUTH_FILE environment variable to override")
 	flags.StringVar(&opts.blobCache, "blob-cache", "", "assume image blobs in the specified directory will be available for pushing")
+	flags.StringVar(&opts.blobInfoCache, "blob-info-cache-dir", "", "cache information about blobs in the specified directory instead of the default location")
+	if err := flags.MarkHidden("blob-info-cache-dir"); err != nil {
+		panic(fmt.Sprintf("error marking blob-info-cache-dir as hidden: %v", err))
+	}
 	flags.StringVar(&opts.certDir, "cert-dir", "", "use certificates at the specified path to access the registry")
 	flags.StringVar(&opts.creds, "creds", "", "use `[username[:password]]` for accessing the registry")
 	flags.StringVar(&opts.digestfile, "digestfile", "", "after copying the image, write the digest of the resulting image to the file")

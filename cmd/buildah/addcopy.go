@@ -30,6 +30,7 @@ type addCopyResults struct {
 	contextdir         string
 	from               string
 	blobCache          string
+	blobInfoCache      string
 	decryptionKeys     []string
 	removeSignatures   bool
 	signaturePolicy    string
@@ -74,6 +75,10 @@ func applyFlagVars(flags *pflag.FlagSet, opts *addCopyResults) {
 	flags.StringVar(&opts.blobCache, "blob-cache", "", "store copies of pulled image blobs in the specified directory")
 	if err := flags.MarkHidden("blob-cache"); err != nil {
 		panic(fmt.Sprintf("error marking blob-cache as hidden: %v", err))
+	}
+	flags.StringVar(&opts.blobInfoCache, "blob-info-cache-dir", "", "cache information about blobs in the specified directory instead of the default location")
+	if err := flags.MarkHidden("blob-info-cache-dir"); err != nil {
+		panic(fmt.Sprintf("error marking blob-info-cache-dir as hidden: %v", err))
 	}
 	flags.StringVar(&opts.certDir, "cert-dir", "", "use certificates at the specified path to access registries and sources in HTTPS locations")
 	flags.StringVar(&opts.checksum, "checksum", "", "checksum the HTTP source content")
