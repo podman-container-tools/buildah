@@ -1228,6 +1228,21 @@ func (s *stageExecutor) prepare(ctx context.Context, from string, initializeIBCo
 	return builder, nil
 }
 
+// recordWorkingContainer notes the stage's working container so that it gets cleaned up
+// once the build no longer needs its filesystem.
+//
+// The working container is gone if the build was torn down while this stage was still
+// running, which Delete signals by clearing the builder. Report that rather than
+// dereferencing it and taking the process down with a SIGSEGV; the executor handles this
+// like any other stage error.
+func (s *stageExecutor) recordWorkingContainer() error {
+	if s.builder == nil {
+		return fmt.Errorf("stage %q: working container was deleted while the stage was still running", s.name)
+	}
+	s.containerIDs = append(s.containerIDs, s.builder.ContainerID)
+	return nil
+}
+
 // Delete deletes the stage's working container, if we have one.
 func (s *stageExecutor) Delete() (err error) {
 	if s.builder != nil {
@@ -1920,20 +1935,14 @@ func (s *stageExecutor) execute(ctx context.Context, base string) (imgID string,
 		rebase = moreInstructions || rootfsIsUsedLater
 
 		if rebase {
-			// Our working container is gone if the build was torn down while this
-			// stage was still running, which Delete signals by clearing the builder.
-			// Fail the stage rather than dereferencing it and taking the process with
-			// us; the executor reports this like any other stage error.
-			if s.builder == nil {
-				return "", nil, false, fmt.Errorf("stage %q: working container was deleted while the stage was still running", s.name)
-			}
-
 			// Since we either committed the working container or
 			// are about to replace it with one based on a cached
 			// image, add the current working container's ID to the
 			// list of successful intermediate containers that
 			// we'll clean up later.
-			s.containerIDs = append(s.containerIDs, s.builder.ContainerID)
+			if err := s.recordWorkingContainer(); err != nil {
+				return "", nil, false, err
+			}
 
 			// Prepare for the next step or subsequent phases by
 			// creating a new working container with the
