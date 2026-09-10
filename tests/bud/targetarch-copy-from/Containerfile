@@ -1,0 +1,9 @@
+FROM alpine AS artifacts-amd64
+RUN echo "amd64" > /arch
+
+FROM alpine AS artifacts-arm64
+RUN echo "arm64" > /arch
+
+FROM scratch AS artifacts
+ARG TARGETARCH
+COPY --from=artifacts-${TARGETARCH} /arch /arch
