@@ -400,7 +400,7 @@ func GenBuildOptions(c *cobra.Command, inputArgs []string, iopts BuildOptions) (
 		sbomScanOptions = append(sbomScanOptions, *sbomScanOption)
 	}
 
-	var compatVolumes, createdAnnotation, inheritAnnotations, inheritLabels, skipUnusedStages types.OptionalBool
+	var compatVolumes, createdAnnotation, inheritAnnotations, inheritLabels, inheritLayerAnnotations, skipUnusedStages types.OptionalBool
 	if c.Flag("compat-volumes").Changed {
 		compatVolumes = types.NewOptionalBool(iopts.CompatVolumes)
 	}
@@ -409,6 +409,9 @@ func GenBuildOptions(c *cobra.Command, inputArgs []string, iopts BuildOptions) (
 	}
 	if c.Flag("inherit-annotations").Changed {
 		inheritAnnotations = types.NewOptionalBool(iopts.InheritAnnotations)
+	}
+	if c.Flag("inherit-layer-annotations").Changed {
+		inheritLayerAnnotations = types.NewOptionalBool(iopts.InheritLayerAnnotations)
 	}
 	if c.Flag("inherit-labels").Changed {
 		inheritLabels = types.NewOptionalBool(iopts.InheritLabels)
@@ -456,6 +459,7 @@ func GenBuildOptions(c *cobra.Command, inputArgs []string, iopts BuildOptions) (
 		In:                      stdin,
 		InheritLabels:           inheritLabels,
 		InheritAnnotations:      inheritAnnotations,
+		InheritLayerAnnotations: inheritLayerAnnotations,
 		Isolation:               isolation,
 		Jobs:                    &iopts.Jobs,
 		Labels:                  iopts.Label,

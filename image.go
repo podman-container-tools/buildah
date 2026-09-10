@@ -147,6 +147,8 @@ type containerImageRef struct {
 	setAnnotations        []string
 	createdAnnotation     types.OptionalBool
 	os                    string
+	layerAnnotations      map[digest.Digest]map[string]string
+	topLayerAnnotations   map[string]string
 }
 
 type blobLayerInfo struct {
@@ -190,6 +192,17 @@ func (i *containerImageRef) NewImage(ctx context.Context, sc *types.SystemContex
 		return nil, err
 	}
 	return image.FromSource(ctx, sc, src)
+}
+
+func cloneLayerAnnotations(src map[digest.Digest]map[string]string) map[digest.Digest]map[string]string {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[digest.Digest]map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = maps.Clone(v)
+	}
+	return dst
 }
 
 func expectedOCIDiffIDs(image v1.Image) int {
@@ -348,8 +361,9 @@ func (i *containerImageRef) extractRootfs(ctx context.Context, opts ExtractRootf
 type manifestBuilder interface {
 	// addLayer adds notes to the manifest and config about the layer.  The layer blobs are
 	// identified by their possibly-compressed blob digests and sizes in the manifest, and by
-	// their uncompressed digests (diffIDs) in the config.
-	addLayer(layerBlobSum digest.Digest, layerBlobSize int64, diffID digest.Digest)
+	// their uncompressed digests (diffIDs) in the config. The annotations, if
+	// non-nil, are propagated through the layer descriptor (for OCI only).
+	addLayer(layerBlobSum digest.Digest, layerBlobSize int64, diffID digest.Digest, annotations map[string]string)
 	computeLayerMIMEType(what string, layerCompression archive.Compression) error
 	buildHistory(extraImageContentDiff string, extraImageContentDiffDigest digest.Digest) error
 	manifestAndConfig() ([]byte, []byte, error)
@@ -444,7 +458,7 @@ func (i *containerImageRef) newDockerSchema2ManifestBuilder() (manifestBuilder, 
 	}, nil
 }
 
-func (mb *dockerSchema2ManifestBuilder) addLayer(layerBlobSum digest.Digest, layerBlobSize int64, diffID digest.Digest) {
+func (mb *dockerSchema2ManifestBuilder) addLayer(layerBlobSum digest.Digest, layerBlobSize int64, diffID digest.Digest, _ map[string]string) {
 	dlayerDescriptor := docker.V2S2Descriptor{
 		MediaType: mb.layerMediaType,
 		Digest:    layerBlobSum,
@@ -681,11 +695,12 @@ func (i *containerImageRef) newOCIManifestBuilder() (manifestBuilder, error) {
 	}, nil
 }
 
-func (mb *ociManifestBuilder) addLayer(layerBlobSum digest.Digest, layerBlobSize int64, diffID digest.Digest) {
+func (mb *ociManifestBuilder) addLayer(layerBlobSum digest.Digest, layerBlobSize int64, diffID digest.Digest, annotations map[string]string) {
 	olayerDescriptor := v1.Descriptor{
-		MediaType: mb.layerMediaType,
-		Digest:    layerBlobSum,
-		Size:      layerBlobSize,
+		MediaType:   mb.layerMediaType,
+		Digest:      layerBlobSum,
+		Size:        layerBlobSize,
+		Annotations: maps.Clone(annotations),
 	}
 	mb.omanifest.Layers = append(mb.omanifest.Layers, olayerDescriptor)
 	// Note this layer in the list of diffIDs, again using the uncompressed digest.
@@ -1049,6 +1064,8 @@ func (i *containerImageRef) NewImageSource(ctx context.Context, _ *types.SystemC
 			layerUncompressedDigest = layer.UncompressedDigest
 			layerUncompressedSize = layer.UncompressedSize
 		}
+		// Get annotations for the layer if present.
+		layerAnnotations := maps.Clone(i.layerAnnotations[layerUncompressedDigest])
 		// We already know the digest of the contents of parent layers,
 		// so if this is a parent layer, and we know its digest, reuse
 		// its blobsum, diff ID, and size.
@@ -1057,7 +1074,7 @@ func (i *containerImageRef) NewImageSource(ctx context.Context, _ *types.SystemC
 			layerBlobSize := layerUncompressedSize
 			diffID := layerUncompressedDigest
 			// Note this layer in the manifest, using the appropriate blobsum.
-			mb.addLayer(layerBlobSum, layerBlobSize, diffID)
+			mb.addLayer(layerBlobSum, layerBlobSize, diffID, layerAnnotations)
 			blobLayers[diffID] = blobLayerInfo{
 				ID:   layerID,
 				Size: layerBlobSize,
@@ -1106,6 +1123,9 @@ func (i *containerImageRef) NewImageSource(ctx context.Context, _ *types.SystemC
 				// If we're up to the final layer, but we don't want to
 				// include a diff for it, we're done.
 				if i.emptyLayer && layerID == i.layerID {
+					if len(i.topLayerAnnotations) > 0 {
+						logrus.Warnf("Read-write layer annotations discarded: layer is empty")
+					}
 					continue
 				}
 				if layerID == i.layerID {
@@ -1217,12 +1237,27 @@ func (i *containerImageRef) NewImageSource(ctx context.Context, _ *types.SystemC
 			switch size {
 			case 0, 512, 1024, 2048:
 				if srcHasher.Digest() == digest.Canonical.FromBytes(make([]byte, size)) {
+					if len(i.topLayerAnnotations) > 0 {
+						logrus.Warnf("Read-write layer annotations discarded: layer is empty")
+					}
 					i.emptyLayer = true
 					continue
 				}
 			}
 		}
-		mb.addLayer(destHasher.Digest(), size, srcHasher.Digest())
+
+		diffID := srcHasher.Digest()
+		if layerAnnotations == nil {
+			layerAnnotations = maps.Clone(i.layerAnnotations[diffID])
+		}
+		// Set layer annotations for the top layer.
+		if layerID == i.layerID && len(i.topLayerAnnotations) > 0 {
+			if layerAnnotations == nil {
+				layerAnnotations = make(map[string]string)
+			}
+			maps.Copy(layerAnnotations, i.topLayerAnnotations)
+		}
+		mb.addLayer(destHasher.Digest(), size, diffID, layerAnnotations)
 	}
 
 	// Only attempt to append history if history was not disabled explicitly.
@@ -1832,6 +1867,8 @@ func (b *Builder) makeContainerImageRef(ctx context.Context, options CommitOptio
 		layerPullUps:          layerPullUps,
 		createdAnnotation:     options.CreatedAnnotation,
 		os:                    b.OCIv1.OS,
+		layerAnnotations:      cloneLayerAnnotations(b.ImageLayerAnnotations),
+		topLayerAnnotations:   maps.Clone(b.TopLayerAnnotations),
 	}
 	if ref.created != nil {
 		for i := range ref.preEmptyLayers {

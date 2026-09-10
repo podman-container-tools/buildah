@@ -25,9 +25,11 @@ BUILDAH\_HISTORY environment variable. `export BUILDAH_HISTORY=true`
 **--annotation**, **-a** *annotation*=*annotation*
 
 Add an image *annotation* (e.g. annotation=*annotation*) to the image manifest
-of any images which will be built using the specified container. Can be used multiple times.
-If *annotation* has a trailing `-`, then the *annotation* is removed from the config.
-If the *annotation* is set to "-" then all annotations are removed from the config.
+of any images which will be built using the specified container or add a per-layer
+annotation for the top-most layer with the "layer:" prefix before the key. Can be used
+multiple times. If *annotation* has a trailing `-`, then the *annotation* is removed
+from the config. If the *annotation* is set to "-" then all annotations are removed
+from the config.
 
 **--arch** *architecture*
 
