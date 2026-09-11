@@ -10836,3 +10836,50 @@ _EOF
     run_buildah --log-level error build $WITH_POLICY_JSON --layers -t quiet -f $contextdir/Containerfile $contextdir
     assert "$output" "!~" "Using cache"
 }
+
+@test "bud multi-stage build preserves architecture of local external images" {
+  # This tests that stages without a --platform flag are NOT aggressively
+  # reset to the host architecture. It ensures Buildah does not strict-match
+  # and crash when trying to resolve local images of a foreign architecture.
+
+  run_buildah info --format '{{.host.arch}}'
+  host_arch="$output"
+  
+  # Select a foreign test architecture + variant
+  test_arch="arm"
+  test_variant="v7"
+  if [[ "$host_arch" == "arm" ]]; then
+    test_arch="arm64"
+    test_variant="v8"
+  fi
+
+  local contextdir="${TEST_SCRATCH_DIR}/multi-stage-variant"
+  mkdir -p "$contextdir"
+
+  # 1. Build an external local image with a foreign architecture
+  cat > "$contextdir/Dockerfile.base" << EOF
+FROM scratch
+ENV STAGE=base
+EOF
+  run_buildah build $WITH_POLICY_JSON --platform=linux/${test_arch}/${test_variant} -t local-cross-builder -f "$contextdir/Dockerfile.base" "$contextdir"
+
+  # 2. Main Dockerfile
+  cat > "$contextdir/Dockerfile" << EOF
+ARG BASE=local-cross-builder
+
+# Stage 1: Exists purely to test multi-stage behavior with local
+FROM scratch AS stage1
+
+# Stage 2: Uses the local foreign image without a --platform flag.
+# This should leave the context empty and successfully accept the local foreign image.
+FROM \${BASE} AS final
+ENV STAGE=final
+EOF
+
+  # 3. Build the multi-stage image.
+  run_buildah build $WITH_POLICY_JSON --target final -t test-final "$contextdir"
+
+  # 4. Verify the final image successfully retained the exact foreign architecture and variant.
+  run_buildah inspect --format '{{.OCIv1.Architecture}}/{{.OCIv1.Variant}}' test-final
+  expect_output "${test_arch}/${test_variant}"
+}

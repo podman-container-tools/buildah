@@ -1115,18 +1115,27 @@ func (s *stageExecutor) prepare(ctx context.Context, from string, initializeIBCo
 	// In a multi-stage build where `FROM --platform=<>` was used then we must
 	// reset context for new stages so that new stages don't inherit unexpected
 	// `--platform` from prior stages.
-	if stage.Builder.Platform != "" || (len(s.stages) > 1 && (s.systemContext.ArchitectureChoice == "" && s.systemContext.VariantChoice == "" && s.systemContext.OSChoice == "")) {
-		imageOS, imageArch, imageVariant, err := parse.Platform(stage.Builder.Platform)
+	effectivePlatform := stage.Builder.Platform
+	if effectivePlatform == "" &&
+		len(s.stages) > 1 &&
+		s.systemContext.ArchitectureChoice == "" &&
+		s.systemContext.VariantChoice == "" &&
+		s.systemContext.OSChoice == "" {
+		for _, prevStage := range s.stages[:s.index] {
+			if prevStage.Builder.Platform != "" {
+				effectivePlatform = "local" // triggers host default resolution
+				break
+			}
+		}
+	}
+	if effectivePlatform != "" {
+		imageOS, imageArch, imageVariant, err := parse.Platform(effectivePlatform)
 		if err != nil {
-			return nil, fmt.Errorf("unable to parse platform %q: %w", stage.Builder.Platform, err)
+			return nil, fmt.Errorf("unable to parse platform %q: %w", effectivePlatform, err)
 		}
-		if imageArch != "" || imageVariant != "" {
-			s.systemContext.ArchitectureChoice = imageArch
-			s.systemContext.VariantChoice = imageVariant
-		}
-		if imageOS != "" {
-			s.systemContext.OSChoice = imageOS
-		}
+		s.systemContext.ArchitectureChoice = imageArch
+		s.systemContext.VariantChoice = imageVariant
+		s.systemContext.OSChoice = imageOS
 	}
 
 	builderOptions := buildah.BuilderOptions{
