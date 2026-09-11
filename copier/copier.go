@@ -1909,6 +1909,10 @@ func copierHandlerPut(bulkReader io.Reader, req request, idMappings *idtools.IDM
 			return errorResponse("copier: put: %v", err)
 		}
 	}
+	osRoot, err := os.OpenRoot(targetDirectory)
+	if err != nil {
+		return errorResponse("copier: put: %v", err)
+	}
 	cb := func() error {
 		type directoryAndTimes struct {
 			directory    string
@@ -1927,6 +1931,7 @@ func copierHandlerPut(bulkReader io.Reader, req request, idMappings *idtools.IDM
 					logrus.Debugf("error setting permissions of %q to 0%o: %v", directory, uint32(mode), err)
 				}
 			}
+			osRoot.Close()
 		}()
 		ignoredItems := make(map[string]struct{})
 		tr := tar.NewReader(bulkReader)
@@ -1941,6 +1946,13 @@ func copierHandlerPut(bulkReader io.Reader, req request, idMappings *idtools.IDM
 			}
 			if req.PutOptions.Rename != nil {
 				hdr.Name = handleRename(req.PutOptions.Rename, hdr.Name)
+			}
+			// do a quick check for paths that would land outside
+			// of the root, to improve our compatibility with
+			// recent versions of go-archive
+			cleanerHdrName := cleanerReldirectory(filepath.FromSlash(hdr.Name))
+			if _, err := osRoot.Lstat(cleanerHdrName); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
 			}
 			// figure out who should own this new item
 			if idMappings != nil && !idMappings.Empty() {
@@ -1962,7 +1974,7 @@ func copierHandlerPut(bulkReader io.Reader, req request, idMappings *idtools.IDM
 			}
 			// make sure the parent directory exists, including for tar.TypeXGlobalHeader entries
 			// that we otherwise ignore, because that's what docker build does with them
-			path := filepath.Join(targetDirectory, cleanerReldirectory(filepath.FromSlash(hdr.Name)))
+			path := filepath.Join(targetDirectory, cleanerHdrName)
 			if err := ensureDirectoryUnderRoot(filepath.Dir(path)); err != nil {
 				return err
 			}

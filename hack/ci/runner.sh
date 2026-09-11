@@ -82,11 +82,31 @@ function run_conformance() {
     $SUDO env "TMPDIR=$TMPDIR" make test-conformance
 }
 
+# The integration tests need a few packages (networking helpers, mostly) that
+# were dropped from the CI VM images in podman-container-tools/automation#25.
+# Install them here so the tests that depend on them keep passing.
+function install_integration_deps() {
+    local packages=(containernetworking-plugins iptables slirp4netns)
+    echo "::group::Installing integration test dependencies"
+    case "$OS_RELEASE_ID" in
+        fedora)
+            sudo dnf -y install "${packages[@]}"
+            ;;
+        debian)
+            sudo apt-get -y update
+            sudo apt-get -y install "${packages[@]}"
+            ;;
+    esac
+    echo "::endgroup::"
+}
+
 function run_integration() {
+    install_integration_deps
     $SUDO make test-integration
 }
 
 function run_in_podman() {
+    install_integration_deps
     export IN_PODMAN=true
     export BUILDAH_ISOLATION=chroot
     export STORAGE_DRIVER=vfs

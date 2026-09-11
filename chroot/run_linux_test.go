@@ -21,12 +21,12 @@ func TestStatFlagNames(t *testing.T) {
 
 func TestMountFlagNames(t *testing.T) {
 	var names []string
-	var flags int
+	var flags uintptr
 	for flag := range mountFlagMap {
 		flags |= flag
 		names = append(names, mountFlagMap[flag])
-		assert.Equal(t, []string{mountFlagMap[flag]}, mountFlagNames(uintptr(flag)))
+		assert.Equal(t, []string{mountFlagMap[flag]}, mountFlagNames(flag))
 	}
 	slices.Sort(names)
-	assert.Equal(t, names, mountFlagNames(uintptr(flags)))
+	assert.Equal(t, names, mountFlagNames(flags))
 }

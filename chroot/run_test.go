@@ -571,7 +571,7 @@ func TestLinuxIDMapping(t *testing.T) {
 		},
 		func(t *testing.T, report *types.TestReport) {
 			if len(report.Spec.Linux.UIDMappings) != 1 {
-				t.Fatalf("expected 1 uid mapping, got %q", len(report.Spec.Linux.UIDMappings))
+				t.Fatalf("expected 1 uid mapping, got %d", len(report.Spec.Linux.UIDMappings))
 			}
 			if report.Spec.Linux.UIDMappings[0].HostID != uint32(unix.Getuid()) {
 				t.Fatalf("expected host uid mapping to be %d, got %d", unix.Getuid(), report.Spec.Linux.UIDMappings[0].HostID)
@@ -609,7 +609,7 @@ func TestLinuxIDMappingShift(t *testing.T) {
 		},
 		func(t *testing.T, report *types.TestReport) {
 			if len(report.Spec.Linux.UIDMappings) != 1 {
-				t.Fatalf("expected 1 uid mapping, got %q", len(report.Spec.Linux.UIDMappings))
+				t.Fatalf("expected 1 uid mapping, got %d", len(report.Spec.Linux.UIDMappings))
 			}
 			if report.Spec.Linux.UIDMappings[0].HostID != uint32(unix.Getuid()+1) {
 				t.Fatalf("expected host uid mapping to be %d, got %d", unix.Getuid()+1, report.Spec.Linux.UIDMappings[0].HostID)
@@ -621,7 +621,7 @@ func TestLinuxIDMappingShift(t *testing.T) {
 				t.Fatalf("expected container uid map size to be 1, got %d", report.Spec.Linux.UIDMappings[0].Size)
 			}
 			if report.Spec.Linux.GIDMappings[0].HostID != uint32(unix.Getgid()+1) {
-				t.Fatalf("expected host uid mapping to be %d, got %d", unix.Getgid()+1, report.Spec.Linux.GIDMappings[0].HostID)
+				t.Fatalf("expected host gid mapping to be %d, got %d", unix.Getgid()+1, report.Spec.Linux.GIDMappings[0].HostID)
 			}
 			if report.Spec.Linux.GIDMappings[0].ContainerID != 0 {
 				t.Fatalf("expected container gid mapping to be 0, got %d", report.Spec.Linux.GIDMappings[0].ContainerID)
