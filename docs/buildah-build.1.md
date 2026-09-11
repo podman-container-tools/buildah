@@ -825,7 +825,25 @@ the `arch` command.  Valid OS and architecture name combinations are listed as
 values for $GOOS and $GOARCH at https://golang.org/doc/install/source#environment,
 and can also be found by running `go tool dist list`.
 
-The `buildah build` command allows building images for all Linux architectures, even non-native architectures. When building images for a different architecture,  the `RUN` instructions require emulation software installed on the host provided by packages like `qemu-user-static`. Note: it is always preferred to build images on the native architecture if possible.
+The `buildah build` command can build images for all Linux architectures, even
+those which do not match the system where `buildah` is running.  When building
+images for a different architecture, using the `RUN` instruction may require
+emulation software installed on the host provided by packages like
+`qemu-user-static`.
+
+Note: it is always preferred to build images on the native architecture if possible.
+
+In Linux environments, when `buildah build` is running inside of a container
+(assumed to be the case when the `container` environment variable is set)
+started by an unprivileged user ("rootless mode"), if a `RUN` instruction is
+executed during a build for a non-native platform, and `buildah` can confirm
+that it will encounter `exec format error` errors if it attempts to run
+binaries for a number of architectures, before executing the `RUN` instruction,
+`buildah` will attempt to register binfmt_misc handlers configured in the
+/etc/binfmt.d, /run/binfmt.d, and /usr/lib/binfmt.d directories in the
+container where `buildah build` is running.  This default can be forced on or
+disabled by setting the `BUILDAH_REGISTER_BINFMT` environment variable when
+running `buildah build`.
 
 **NOTE:** The `--platform` option may not be used in combination with the `--arch`, `--os`, or `--variant` options.
 
@@ -1170,7 +1188,7 @@ user with `uid=50000`:
 # Switch to application user (Note that uid depends on container image)
 USER app
 # ...and check whether ssh identities are available
-RUN --mount=type=ssh,uid=50000 \
+RUN --mount=type=ssh,uid=50000 \\
     ssh-add -L
 ```
 

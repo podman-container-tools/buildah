@@ -13,6 +13,18 @@ inherited from the container's image or as specified using previous calls to
 the *buildah config* command.  To execute *buildah run* within an
 interactive shell, specify the --tty option.
 
+In Linux environments, when `buildah run` is running inside of a container
+(assumed to be the case when the `container` environment variable is set)
+started by an unprivileged user ("rootless mode"), if the platform of the base
+image does not match the local system, and `buildah` can confirm that it will
+encounter `exec format error` errors if it attempts to run binaries for a
+number of architectures, before starting the container to run the specified
+command, `buildah` will attempt to register binfmt_misc handlers configured in
+the /etc/binfmt.d, /run/binfmt.d, and /usr/lib/binfmt.d directories in the
+container where `buildah run` is running.  This default can be forced on or
+disabled by setting the `BUILDAH_REGISTER_BINFMT` environment variable when
+running `buildah run`.
+
 ## OPTIONS
 
 **--add-history**
@@ -278,11 +290,10 @@ to buildah run, the option given would be `--runtime-flag log-format=json`.
 
 **--tty**, **--terminal**, **-t**
 
-By default a pseudo-TTY is allocated only when buildah's standard input is
-attached to a pseudo-TTY.  Setting the `--tty` option to `true` will cause a
-pseudo-TTY to be allocated inside the container connecting the user's "terminal"
-with the stdin and stdout stream of the container.  Setting the `--tty` option to
-`false` will prevent the pseudo-TTY from being allocated.
+By default a pseudo-TTY is allocated when buildah's standard input is
+attached to a terminal.  Setting the `--tty` option to `true` will force a
+pseudo-TTY to be allocated for the container.  Setting the `--tty` option to
+`false` will prevent a pseudo-TTY from being allocated.
 
 **--umask** *octal_value*
 

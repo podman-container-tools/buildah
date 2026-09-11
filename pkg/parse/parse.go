@@ -856,6 +856,7 @@ func GetConfidentialWorkloadOptions(arg string) (define.ConfidentialWorkloadOpti
 			if val == option {
 				val = strings.TrimPrefix(option, "ignore-attestation-errors=")
 			}
+			val = strings.ToLower(val)
 			options.IgnoreAttestationErrors = val == "true" || val == "yes" || val == "on" || val == "1"
 		case strings.HasPrefix(option, "firmware-library="), strings.HasPrefix(option, "firmware_library="):
 			val := strings.TrimPrefix(option, "firmware-library=")

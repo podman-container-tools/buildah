@@ -505,10 +505,11 @@ func GetFromAndBudFlagsCompletions() commonComp.FlagCompletions {
 }
 
 // UseLayers returns true if BUILDAH_LAYERS is set to "1" or "true"
-// otherwise it returns false
+// or "yes" or "on", otherwise it returns false
 func UseLayers() bool {
 	layers := os.Getenv("BUILDAH_LAYERS")
-	if strings.ToLower(layers) == "true" || layers == "1" {
+	layers = strings.ToLower(layers)
+	if layers == "true" || layers == "yes" || layers == "on" || layers == "1" {
 		return true
 	}
 	return false
