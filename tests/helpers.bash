@@ -38,6 +38,7 @@ BUDFILES=${TEST_SOURCES}/bud
 
 # Used hundreds of times throughout all the tests
 WITH_POLICY_JSON="--signature-policy ${TEST_SOURCES}/policy.json"
+export CONTAINERS_POLICY_JSON=${TEST_SOURCES}/policy.json
 
 # We don't invoke gnupg directly in many places, but this avoids ENOTTY errors
 # when we invoke it directly in batch mode, and CI runs us without a terminal
@@ -267,11 +268,11 @@ function buildah() {
 }
 
 function imgtype() {
-    ${IMGTYPE_BINARY} ${ROOTDIR_OPTS} "$@"
+    ${IMGTYPE_BINARY} -signature-policy ${TEST_SOURCES}/policy.json ${ROOTDIR_OPTS} "$@"
 }
 
 function copy() {
-    ${COPY_BINARY} --max-parallel-downloads=1 ${ROOTDIR_OPTS} ${BUILDAH_REGISTRY_OPTS} "$@"
+    ${COPY_BINARY} $WITH_POLICY_JSON --max-parallel-downloads=1 ${ROOTDIR_OPTS} ${BUILDAH_REGISTRY_OPTS} "$@"
 }
 
 function podman() {
