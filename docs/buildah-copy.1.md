@@ -39,8 +39,9 @@ certificates directory is _/etc/containers/certs.d_.
 
 **--checksum** *checksum*
 
-Checksum the source content. The value of *checksum* must be a standard
-container digest string. Only supported for HTTP sources.
+Checksum the source content. For HTTP sources, the value of *checksum* must be
+a standard container digest string. For Git sources, the value of *checksum* must
+be a hex encoded Git commit SHA; a prefix of the full commit ID is sufficient.
 
 **--chmod** *permissions*
 

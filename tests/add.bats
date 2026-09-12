@@ -668,3 +668,38 @@ EOF
   cmp $ubuntu/etc/passwd ${croot}/tmp/passwd
   cmp $ubuntu/etc/passwd ${croot}/tmp/passwd2
 }
+
+@test "add git url with checksum flag" {
+  if ! which git ; then
+    skip "no git in PATH"
+  fi
+  _prefetch busybox
+  repodir=${TEST_SCRATCH_DIR}/repository-add-checksum
+  mkdir -p ${repodir}/podman.git
+  tar -C ${repodir}/podman.git -xz < ${TEST_SOURCES}/git-daemon/bare-podman-repo.tar.gz
+  starthttpd /git/=${repodir}:"git http-backend":GIT_HTTP_EXPORT_ALL=1:GIT_PROJECT_ROOT=${repodir} ${repodir}
+
+  gitrepo=http://0.0.0.0:${HTTP_SERVER_PORT}/git/podman.git
+  commit=$(git ls-remote ${gitrepo} v5.0.0 | cut -f1)
+  run_buildah from --quiet $WITH_POLICY_JSON busybox
+  cid=$output
+  run_buildah add --checksum=${commit} $cid ${gitrepo}#v5.0.0 /src
+}
+
+@test "add git url with bad checksum" {
+  if ! which git ; then
+    skip "no git in PATH"
+  fi
+  _prefetch busybox
+  repodir=${TEST_SCRATCH_DIR}/repository-add-checksum-bad
+  mkdir -p ${repodir}/podman.git
+  tar -C ${repodir}/podman.git -xz < ${TEST_SOURCES}/git-daemon/bare-podman-repo.tar.gz
+  starthttpd /git/=${repodir}:"git http-backend":GIT_HTTP_EXPORT_ALL=1:GIT_PROJECT_ROOT=${repodir} ${repodir}
+
+  gitrepo=http://0.0.0.0:${HTTP_SERVER_PORT}/git/podman.git
+  commit=$(git ls-remote ${gitrepo} v5.0.0 | cut -f1)
+  run_buildah from --quiet $WITH_POLICY_JSON busybox
+  cid=$output
+  run_buildah 125 add --checksum=0000000000000000000000000000000000000000 $cid ${gitrepo}#v5.0.0 /src
+  expect_output --substring "unexpected commit for \"${gitrepo}#v5.0.0\": ${commit}, want 0000000000000000000000000000000000000000"
+}
