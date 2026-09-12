@@ -724,6 +724,15 @@ Valid _mode_ values are:
 
 Do not use existing cached images for the container build. Build from the start with a new set of cached layers.
 
+**--no-cache-filter** *stage*
+
+Do not use existing cached images for the named or numbered build *stage*, regardless of whether **--no-cache** is set.
+Stages not named by **--no-cache-filter** may still use the cache. Only has an effect when **--layers** is used, since
+caching is not performed on a per-stage basis otherwise. May be specified multiple times.
+
+Note: if a stage's name is identical to another stage's numeric position (for example, a stage literally named "1"),
+a value passed to **--no-cache-filter** may match both.
+
 **--no-hostname**
 
 Do not create the _/etc/hostname_ file in the container for RUN instructions.

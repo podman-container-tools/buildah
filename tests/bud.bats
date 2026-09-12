@@ -2741,6 +2741,76 @@ _EOF
 
 }
 
+@test "bud with --no-cache-filter" {
+  _prefetch alpine
+
+  local contextdir="${TEST_SCRATCH_DIR}/no-cache-filter"
+  mkdir -p "$contextdir"
+  cat > "$contextdir/Containerfile" << _EOF
+FROM alpine AS base
+RUN echo base-stage
+FROM base AS final
+RUN echo final-stage
+_EOF
+
+  local target="no-cache-filter-test-$(safename)"
+
+  # First build: populate the cache for both stages.
+  run_buildah build $WITH_POLICY_JSON --layers -t "${target}-first" -f "$contextdir/Containerfile" "$contextdir"
+
+  # Second build, no filter applied: both stages' RUN steps should hit cache.
+  run_buildah build $WITH_POLICY_JSON --layers -t "${target}-second" -f "$contextdir/Containerfile" "$contextdir"
+  base_cached=$(echo "$output" | grep -A1 "RUN echo base-stage" | grep -c "Using cache" || true)
+  final_cached=$(echo "$output" | grep -A1 "RUN echo final-stage" | grep -c "Using cache" || true)
+  assert "$base_cached" -eq 1 "base stage should hit cache when --no-cache-filter is not used"
+  assert "$final_cached" -eq 1 "final stage should hit cache when --no-cache-filter is not used"
+
+  # Third build, filtering the "final" stage by name: only "base" should still hit cache.
+  run_buildah build $WITH_POLICY_JSON --layers --no-cache-filter=final -t "${target}-third" -f "$contextdir/Containerfile" "$contextdir"
+  base_cached=$(echo "$output" | grep -A1 "RUN echo base-stage" | grep -c "Using cache" || true)
+  final_cached=$(echo "$output" | grep -A1 "RUN echo final-stage" | grep -c "Using cache" || true)
+  assert "$base_cached" -eq 1 "base stage should still hit cache when 'final' is passed to --no-cache-filter"
+  assert "$final_cached" -eq 0 "final stage should NOT hit cache when 'final' is passed to --no-cache-filter"
+
+  # Fourth build, filtering by the "final" stage's numeric position (1): should behave
+  # the same as filtering by name, confirming position 1 maps to "final".
+  run_buildah build $WITH_POLICY_JSON --layers --no-cache-filter=1 -t "${target}-fourth" -f "$contextdir/Containerfile" "$contextdir"
+  base_cached=$(echo "$output" | grep -A1 "RUN echo base-stage" | grep -c "Using cache" || true)
+  final_cached=$(echo "$output" | grep -A1 "RUN echo final-stage" | grep -c "Using cache" || true)
+  assert "$base_cached" -eq 1 "base stage (position 0) should still hit cache when position 1 is passed to --no-cache-filter"
+  assert "$final_cached" -eq 0 "final stage (position 1) should NOT hit cache, confirming position 1 maps to 'final'"
+
+  # Fifth build, passing --no-cache-filter twice (repeatable flag): neither stage should hit cache.
+  run_buildah build $WITH_POLICY_JSON --layers --no-cache-filter=base --no-cache-filter=final -t "${target}-fifth" -f "$contextdir/Containerfile" "$contextdir"
+  base_cached=$(echo "$output" | grep -A1 "RUN echo base-stage" | grep -c "Using cache" || true)
+  final_cached=$(echo "$output" | grep -A1 "RUN echo final-stage" | grep -c "Using cache" || true)
+  assert "$base_cached" -eq 0 "base stage should NOT hit cache when --no-cache-filter is passed multiple times covering both stages"
+  assert "$final_cached" -eq 0 "final stage should NOT hit cache when --no-cache-filter is passed multiple times covering both stages"
+}
+
+@test "bud with --no-cache-filter without --layers" {
+  _prefetch alpine
+
+  local contextdir="${TEST_SCRATCH_DIR}/no-cache-filter-no-layers"
+  mkdir -p "$contextdir"
+  cat > "$contextdir/Containerfile" << _EOF
+FROM alpine AS base
+RUN echo base-stage
+FROM base AS final
+RUN echo final-stage
+_EOF
+
+  local target="no-cache-filter-no-layers-test-$(safename)"
+
+  run_buildah build $WITH_POLICY_JSON -t "$target" -f "$contextdir/Containerfile" "$contextdir"
+
+  # Without --layers, per-stage cache lookups never happen at all, so
+  # --no-cache-filter should be a pure no-op: no "Using cache" output,
+  # same as a build without the flag.
+  run_buildah build $WITH_POLICY_JSON --no-cache-filter=final -t "$target" -f "$contextdir/Containerfile" "$contextdir"
+  assert "$output" !~ "Using cache" "no per-stage cache messages should appear without --layers, even with --no-cache-filter set"
+}
+
 @test "build --unsetenv PATH" {
   _prefetch alpine
   mytmpdir=${TEST_SCRATCH_DIR}/my-dir
