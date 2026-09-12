@@ -1,0 +1,5 @@
+FROM alpine
+
+COPY --chmod=rwxrwxrwx copychmod.txt /tmp/
+
+CMD /bin/sh
