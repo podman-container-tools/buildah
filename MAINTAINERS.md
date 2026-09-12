@@ -13,10 +13,10 @@ Maintainers and Reviewers on other Podman Container Tools projects are found in 
 | ----------------- | -------------------------------------------------------- | ------------- | -------------------------------------------- |
 | Lokesh Mandvekar  | [lsm5](https://github.com/lsm5)                          | Maintainer    | [Red Hat](https://github.com/RedHatOfficial) |
 | Aditya Rajan      | [flouthoc](https://github.com/flouthoc)                  | Maintainer    | [Red Hat](https://github.com/RedHatOfficial) |
+| Jan Rodák         | [Honny1](https://github.com/Honny1)                      | Maintainer    | [Red Hat](https://github.com/RedHatOfficial) |
 | Tom Sweeney       | [TomSweeneyRedHat](https://github.com/TomSweeneyRedHat/) | Maintainer    | [Red Hat](https://github.com/RedHatOfficial) |
 | Dan Walsh         | [rhatdan](https://github.com/rhatdan)                    | Maintainer    | [Red Hat](https://github.com/RedHatOfficial) |
 | Ashley Cui        | [ashley-cui](https://github.com/ashley-cui)              | Reviewer      | [Red Hat](https://github.com/RedHatOfficial) |
-| Jan Rodák         | [Honny1](https://github.com/Honny1)                      | Reviewer      | [Red Hat](https://github.com/RedHatOfficial) |
 | Valentin Rothberg | [vrothberg](https://github.com/vrothberg)                | Reviewer      | [Red Hat](https://github.com/RedHatOfficial) |
 
 ## Alumni
