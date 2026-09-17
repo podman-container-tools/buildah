@@ -10786,6 +10786,88 @@ _EOF
   done
 }
 
+@test "bud with ADD --checksum for git source" {
+  if ! which git ; then
+    skip "no git in PATH"
+  fi
+  repodir=${TEST_SCRATCH_DIR}/repository-checksum
+  mkdir -p ${repodir}/podman.git
+  tar -C ${repodir}/podman.git -xz < ${TEST_SOURCES}/git-daemon/bare-podman-repo.tar.gz
+  starthttpd /git/=${repodir}:"git http-backend":GIT_HTTP_EXPORT_ALL=1:GIT_PROJECT_ROOT=${repodir} ${repodir}
+
+  gitrepo=http://0.0.0.0:${HTTP_SERVER_PORT}/git/podman.git
+  commit=$(git ls-remote ${gitrepo} v5.0.0 | cut -f1)
+  target=giturl-checksum-image
+  mkdir -p ${TEST_SCRATCH_DIR}/add-checksum-git
+  cat > ${TEST_SCRATCH_DIR}/add-checksum-git/Dockerfile << _EOF
+FROM scratch
+ADD --checksum=${commit} ${gitrepo}#v5.0.0 /src
+_EOF
+  run_buildah build $WITH_POLICY_JSON -t ${target} -f ${TEST_SCRATCH_DIR}/add-checksum-git/Dockerfile ${TEST_SCRATCH_DIR}/add-checksum-git
+}
+
+@test "bud with ADD --checksum prefix for git source" {
+  if ! which git ; then
+    skip "no git in PATH"
+  fi
+  repodir=${TEST_SCRATCH_DIR}/repository-checksum-prefix
+  mkdir -p ${repodir}/podman.git
+  tar -C ${repodir}/podman.git -xz < ${TEST_SOURCES}/git-daemon/bare-podman-repo.tar.gz
+  starthttpd /git/=${repodir}:"git http-backend":GIT_HTTP_EXPORT_ALL=1:GIT_PROJECT_ROOT=${repodir} ${repodir}
+
+  gitrepo=http://0.0.0.0:${HTTP_SERVER_PORT}/git/podman.git
+  commit=$(git ls-remote ${gitrepo} v5.0.0 | cut -f1)
+  prefix=${commit:0:10}
+  target=giturl-checksum-prefix-image
+  mkdir -p ${TEST_SCRATCH_DIR}/add-checksum-git-prefix
+  cat > ${TEST_SCRATCH_DIR}/add-checksum-git-prefix/Dockerfile << _EOF
+FROM scratch
+ADD --checksum=${prefix} ${gitrepo}#v5.0.0 /src
+_EOF
+  run_buildah build $WITH_POLICY_JSON -t ${target} -f ${TEST_SCRATCH_DIR}/add-checksum-git-prefix/Dockerfile ${TEST_SCRATCH_DIR}/add-checksum-git-prefix
+}
+
+@test "bud with ADD --checksum mismatch for git source" {
+  if ! which git ; then
+    skip "no git in PATH"
+  fi
+  repodir=${TEST_SCRATCH_DIR}/repository-checksum-bad
+  mkdir -p ${repodir}/podman.git
+  tar -C ${repodir}/podman.git -xz < ${TEST_SOURCES}/git-daemon/bare-podman-repo.tar.gz
+  starthttpd /git/=${repodir}:"git http-backend":GIT_HTTP_EXPORT_ALL=1:GIT_PROJECT_ROOT=${repodir} ${repodir}
+
+  gitrepo=http://0.0.0.0:${HTTP_SERVER_PORT}/git/podman.git
+  commit=$(git ls-remote ${gitrepo} v5.0.0 | cut -f1)
+  target=giturl-checksum-bad-image
+  mkdir -p ${TEST_SCRATCH_DIR}/add-checksum-git-bad
+  cat > ${TEST_SCRATCH_DIR}/add-checksum-git-bad/Dockerfile << _EOF
+FROM scratch
+ADD --checksum=0000000000000000000000000000000000000000 ${gitrepo}#v5.0.0 /src
+_EOF
+  run_buildah 125 build $WITH_POLICY_JSON -t ${target} -f ${TEST_SCRATCH_DIR}/add-checksum-git-bad/Dockerfile ${TEST_SCRATCH_DIR}/add-checksum-git-bad
+  expect_output --substring "unexpected commit for \"${gitrepo}#v5.0.0\": ${commit}, want 0000000000000000000000000000000000000000"
+}
+
+@test "bud with ADD --checksum malformed for git source" {
+  if ! which git ; then
+    skip "no git in PATH"
+  fi
+  repodir=${TEST_SCRATCH_DIR}/repository-checksum-malformed
+  mkdir -p ${repodir}/podman.git
+  tar -C ${repodir}/podman.git -xz < ${TEST_SOURCES}/git-daemon/bare-podman-repo.tar.gz
+  starthttpd /git/=${repodir}:"git http-backend":GIT_HTTP_EXPORT_ALL=1:GIT_PROJECT_ROOT=${repodir} ${repodir}
+
+  gitrepo=http://0.0.0.0:${HTTP_SERVER_PORT}/git/podman.git
+  target=giturl-checksum-malformed-image
+  mkdir -p ${TEST_SCRATCH_DIR}/add-checksum-git-malformed
+  cat > ${TEST_SCRATCH_DIR}/add-checksum-git-malformed/Dockerfile << _EOF
+FROM scratch
+ADD --checksum=sha256:0000000000000000000000000000000000000000000000000000000000000000 ${gitrepo}#v5.0.0 /src
+_EOF
+  run_buildah 125 build $WITH_POLICY_JSON -t ${target} -f ${TEST_SCRATCH_DIR}/add-checksum-git-malformed/Dockerfile ${TEST_SCRATCH_DIR}/add-checksum-git-malformed
+  expect_output --substring "is not a valid Git commit SHA"
+}
+
 @test "bud-log-level suppresses build progress and keeps RUN output" {
     _prefetch alpine
     local contextdir=${TEST_SCRATCH_DIR}/bud/log-level

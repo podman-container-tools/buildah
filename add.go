@@ -610,9 +610,15 @@ func (b *Builder) AddContext(ctx context.Context, destination string, extract bo
 			pipeReader, pipeWriter := io.Pipe()
 			var srcDigest digest.Digest
 			if options.Checksum != "" {
-				srcDigest, err = digest.Parse(options.Checksum)
-				if err != nil {
-					return fmt.Errorf("invalid checksum flag: %w", err)
+				if urlsource.IsGit(src) {
+					if !urlsource.IsCommitSHAPrefix(options.Checksum) {
+						return fmt.Errorf("invalid checksum flag: %q is not a valid Git commit SHA", options.Checksum)
+					}
+				} else {
+					srcDigest, err = digest.Parse(options.Checksum)
+					if err != nil {
+						return fmt.Errorf("invalid checksum flag: %w", err)
+					}
 				}
 			}
 
@@ -627,6 +633,18 @@ func (b *Builder) AddContext(ctx context.Context, destination string, extract bo
 						return
 					}
 					defer os.RemoveAll(cloneDir)
+					repositoryDir := filepath.Join(cloneDir, subdir)
+					if options.Checksum != "" {
+						var commit string
+						commit, getErr = urlsource.ResolveCommit(repositoryDir)
+						if getErr != nil {
+							return
+						}
+						if !strings.HasPrefix(strings.ToLower(commit), strings.ToLower(options.Checksum)) {
+							getErr = fmt.Errorf("unexpected commit for %q: %s, want %s", src, commit, options.Checksum)
+							return
+						}
+					}
 					getOptions := copier.GetOptions{
 						UIDMap:             srcUIDMap,
 						GIDMap:             srcGIDMap,
@@ -643,7 +661,6 @@ func (b *Builder) AddContext(ctx context.Context, destination string, extract bo
 						Timestamp:          options.Timestamp,
 					}
 					writer := io.WriteCloser(pipeWriter)
-					repositoryDir := filepath.Join(cloneDir, subdir)
 					getErr = copier.GetContext(ctx, repositoryDir, repositoryDir, getOptions, []string{"."}, writer)
 				}()
 			} else {

@@ -76,7 +76,7 @@ func applyFlagVars(flags *pflag.FlagSet, opts *addCopyResults) {
 		panic(fmt.Sprintf("error marking blob-cache as hidden: %v", err))
 	}
 	flags.StringVar(&opts.certDir, "cert-dir", "", "use certificates at the specified path to access registries and sources in HTTPS locations")
-	flags.StringVar(&opts.checksum, "checksum", "", "checksum the HTTP source content")
+	flags.StringVar(&opts.checksum, "checksum", "", "checksum the source content; a container digest for HTTP sources, or a Git commit SHA (or prefix) for Git sources")
 	flags.StringVar(&opts.chown, "chown", "", "set the user and group ownership of the destination content")
 	flags.StringVar(&opts.chmod, "chmod", "", "set the access permissions of the destination content")
 	flags.StringVar(&opts.creds, "creds", "", "use `[username[:password]]` for accessing registries when pulling images")
