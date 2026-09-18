@@ -21,10 +21,11 @@ IMAGE_LIST_S390X_INSTANCE_DIGEST=sha256:882a20ee0df7399a445285361d38b711c299ca09
     assert "$output" =~ "that name is already in use"
     run_buildah manifest create --amend foo
     assert "$output" == "$listid"
-    run_buildah manifest create --amend --annotation red=blue foo busybox
+    run_buildah manifest create --amend --annotation red=blue --annotation green=yellow,orange,purple foo busybox
     assert "$output" == "$listid"
     run_buildah manifest inspect foo
     assert "$output" =~ '"red": "blue"'
+    assert "$output" =~ '"green": "yellow,orange,purple"'
     assert "$output" =~ "${imagedigest}"
     # since manifest exists in local storage this should exit with `0`
     run_buildah manifest exists foo
@@ -130,10 +131,11 @@ IMAGE_LIST_S390X_INSTANCE_DIGEST=sha256:882a20ee0df7399a445285361d38b711c299ca09
     digest="${output##* }"
     alg="${digest%%:*}"
     encoded="${digest##*:}"
-    run_buildah manifest annotate --annotation red=blue foo $TEST_SCRATCH_DIR/randomfile
+    run_buildah manifest annotate --annotation red=blue --annotation green=yellow,orange,purple foo $TEST_SCRATCH_DIR/randomfile
     run_buildah manifest inspect foo
     assert "$output" =~ '"image/png"'
     assert "$output" =~ '"red": "blue"'
+    assert "$output" =~ '"green": "yellow,orange,purple"'
     run_buildah manifest push --all foo oci:$TEST_SCRATCH_DIR/pushed
     run cmp $TEST_SCRATCH_DIR/randomfile $TEST_SCRATCH_DIR/pushed/blobs/sha256/$blobencoded
     assert "$status" -eq 0 "pushed copy of random file did not match original"
@@ -190,9 +192,10 @@ IMAGE_LIST_S390X_INSTANCE_DIGEST=sha256:882a20ee0df7399a445285361d38b711c299ca09
     _prefetch busybox
     run_buildah manifest create foo
     run_buildah manifest add foo busybox
-    run_buildah manifest annotate --index --annotation red=blue foo
+    run_buildah manifest annotate --index --annotation red=blue --annotation green=yellow,orange,purple foo
     run_buildah manifest inspect foo
     assert "$output" =~ '"red": "blue"'
+    assert "$output" =~ '"green": "yellow,orange,purple"'
 }
 
 @test "manifest-annotate instance annotation" {
@@ -200,7 +203,7 @@ IMAGE_LIST_S390X_INSTANCE_DIGEST=sha256:882a20ee0df7399a445285361d38b711c299ca09
     run_buildah manifest create foo
     run_buildah manifest add foo busybox
     instance="${output##* }"
-    run_buildah manifest annotate --annotation red=blue foo "${instance}"
+    run_buildah manifest annotate --annotation red=blue --annotation green=yellow,orange,purple foo "${instance}"
     run_buildah manifest annotate --os OperatingSystem foo "${instance}"
     run_buildah manifest annotate --arch aRCHITECTURE foo "${instance}"
     run_buildah manifest annotate --variant vARIANT foo "${instance}"
@@ -208,6 +211,7 @@ IMAGE_LIST_S390X_INSTANCE_DIGEST=sha256:882a20ee0df7399a445285361d38b711c299ca09
     run_buildah manifest annotate --os-features OSFEATURE1 --os-features OSFEATURE2 foo "${instance}"
     run_buildah manifest inspect foo
     assert "$output" =~ '"red": "blue"'
+    assert "$output" =~ '"green": "yellow,orange,purple"'
     assert "$output" =~ '"os": "OperatingSystem"'
     assert "$output" =~ '"architecture": "aRCHITECTURE"'
     assert "$output" =~ '"variant": "vARIANT"'
