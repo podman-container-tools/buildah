@@ -10,6 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestGetContentSummaryAfterAddingContentNilBuilder(t *testing.T) {
+	t.Parallel()
+	s := &stageExecutor{}
+	require.NotPanics(t, func() {
+		assert.Equal(t, "", s.getContentSummaryAfterAddingContent())
+	})
+}
+
 func TestHistoryEntriesEqual(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
