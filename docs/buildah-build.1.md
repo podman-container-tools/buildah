@@ -1237,7 +1237,7 @@ not affect the timestamps of layer contents.
 
 **--tls-verify** *bool-value*
 
-Require HTTPS and verification of certificates when talking to container registries (defaults to true) and retrieving content from HTTPS locations for ADD instructions.  TLS verification cannot be used when talking to an insecure registry.
+Require HTTPS and verification of certificates when talking to container registries (defaults to true) and retrieving build contexts and content from HTTPS locations for ADD instructions.  TLS verification cannot be used when talking to an insecure registry.
 
 **--ulimit** *type*=*soft-limit*[:*hard-limit*]
 

@@ -3574,6 +3574,26 @@ function validate_instance_compression {
   _test_http http-context-subdir context.tar -f context/Dockerfile
 }
 
+
+@test "bud-insecure-https-context" {
+  _prefetch busybox
+  target=target
+  cat > ${TEST_SCRATCH_DIR}/Containerfile <<- EOF
+  FROM busybox
+  COPY Containerfile /
+EOF
+  mkdir -p ${TEST_SCRATCH_DIR}/subdir
+  tar -cv -C ${TEST_SCRATCH_DIR} -f ${TEST_SCRATCH_DIR}/subdir/context.tar.gz Containerfile
+  starthttpd "${TEST_SCRATCH_DIR}" "" "${TEST_SCRATCH_DIR}"/localhost.crt "${TEST_SCRATCH_DIR}"/localhost.key
+  run_buildah 125 build $WITH_POLICY_JSON -t ${target} https://0.0.0.0:${HTTP_SERVER_PORT}/subdir/context.tar.gz
+  assert "$output" =~ "tls: failed to verify certificate"
+  run_buildah 125 build $WITH_POLICY_JSON --tls-verify=true -t ${target} https://0.0.0.0:${HTTP_SERVER_PORT}/subdir/context.tar.gz
+  assert "$output" =~ "tls: failed to verify certificate"
+  run_buildah build $WITH_POLICY_JSON --tls-verify=false -t ${target} https://0.0.0.0:${HTTP_SERVER_PORT}/subdir/context.tar.gz
+  stophttpd
+  run_buildah from ${target}
+}
+
 @test "bud-git-context" {
   # We need git to be around to handle cloning a repository.
   if ! which git ; then

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -305,6 +306,7 @@ func addAndCopyCmd(c *cobra.Command, args []string, verb string, iopts addCopyRe
 		Link:                  iopts.link,
 		FollowSymlink:         followSymlink,
 		KeepGitDir:            iopts.keepGitDir,
+		Proxy:                 http.ProxyFromEnvironment,
 	}
 	if iopts.contextdir != "" {
 		var excludes []string

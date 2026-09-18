@@ -7,10 +7,12 @@ package cli
 // here we are.
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,6 +26,7 @@ import (
 	"go.podman.io/buildah/define"
 	"go.podman.io/buildah/internal/output"
 	"go.podman.io/buildah/pkg/parse"
+	"go.podman.io/buildah/pkg/tmpdir"
 	"go.podman.io/buildah/pkg/util"
 	"go.podman.io/common/pkg/auth"
 	"go.podman.io/common/pkg/config"
@@ -152,7 +155,20 @@ func GenBuildOptions(c *cobra.Command, inputArgs []string, iopts BuildOptions) (
 		}
 	} else {
 		// The context directory could be a URL.  Try to handle that.
-		tempDir, subDir, err := define.TempDirForURL("", "buildah", cliArgs[0])
+		ctx := c.Context()
+		if ctx == nil {
+			ctx = context.TODO()
+		}
+		urlOptions := tmpdir.URLOptions{
+			Proxy: http.ProxyFromEnvironment,
+		}
+		if c.Flag("cert-dir").Changed {
+			urlOptions.CertPath = iopts.CertDir
+		}
+		if c.Flag("tls-verify").Changed {
+			urlOptions.InsecureSkipTLSVerify = types.NewOptionalBool(!iopts.TLSVerify)
+		}
+		tempDir, subDir, err := tmpdir.ForURL(ctx, "", "buildah", cliArgs[0], &urlOptions)
 		if err != nil {
 			return options, nil, nil, fmt.Errorf("prepping temporary context directory: %w", err)
 		}
@@ -477,6 +493,7 @@ func GenBuildOptions(c *cobra.Command, inputArgs []string, iopts BuildOptions) (
 		Output:                  outputSpec,
 		OutputFormat:            format,
 		Platforms:               platforms,
+		Proxy:                   http.ProxyFromEnvironment,
 		PullPolicy:              pullPolicy,
 		Quiet:                   iopts.Quiet,
 		RemoveIntermediateCtrs:  iopts.Rm,

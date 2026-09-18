@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"slices"
 	"strconv"
@@ -193,6 +195,7 @@ type executor struct {
 	rewriteTimestamp                        bool
 	createdAnnotation                       types.OptionalBool
 	metadataFile                            string
+	proxy                                   func(req *http.Request) (*url.URL, error)
 }
 
 type imageTypeAndHistoryAndDiffIDs struct {
@@ -393,6 +396,7 @@ func newExecutor(logger *logrus.Logger, logPrefix string, store storage.Store, o
 		rewriteTimestamp:                        options.RewriteTimestamp,
 		createdAnnotation:                       options.CreatedAnnotation,
 		metadataFile:                            options.MetadataFile,
+		proxy:                                   options.Proxy,
 	}
 	// sort unsetAnnotations because we will later write these
 	// values to the history of the image therefore we want to
