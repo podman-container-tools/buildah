@@ -668,3 +668,89 @@ EOF
   cmp $ubuntu/etc/passwd ${croot}/tmp/passwd
   cmp $ubuntu/etc/passwd ${croot}/tmp/passwd2
 }
+
+@test "add --include" {
+  mytest=${TEST_SCRATCH_DIR}/mytest
+  mkdir -p ${mytest}/subdir
+  touch ${mytest}/source.go
+  touch ${mytest}/readme.md
+  touch ${mytest}/subdir/nested.go
+  touch ${mytest}/subdir/nested.md
+
+expect="
+stuff
+stuff/source.go
+stuff/subdir
+stuff/subdir/nested.go"
+
+  run_buildah from $WITH_POLICY_JSON scratch
+  cid=$output
+  run_buildah add --include="**/*.go" $cid ${mytest} /stuff
+
+  run_buildah_mount $cid
+  mnt=$output
+  run find $mnt -printf "%P\n"
+  filelist=$(LC_ALL=C sort <<<"$output")
+  run_buildah_umount $cid
+  expect_output --from="$filelist" "$expect" "add recursive include"
+
+  run_buildah from $WITH_POLICY_JSON scratch
+  cid=$output
+  run_buildah add --include="**/*.go" $cid ${mytest}/source.go /stuff2/
+
+  run_buildah_mount $cid
+  mnt=$output
+  run find $mnt -printf "%P\n"
+  filelist=$(LC_ALL=C sort <<<"$output")
+  run_buildah_umount $cid
+  expect_output --from="$filelist" --substring "source.go" "add include single file"
+
+  # include + exclude: exclude wins when both match
+expect="
+stuff
+stuff/source.go
+stuff/subdir"
+
+  run_buildah from $WITH_POLICY_JSON scratch
+  cid=$output
+  run_buildah add --include="**/*.go" --exclude="**/nested.go" $cid ${mytest} /stuff
+  run_buildah_mount $cid
+  mnt=$output
+  run find $mnt -printf "%P\n"
+  filelist=$(LC_ALL=C sort <<<"$output")
+  run_buildah_umount $cid
+  expect_output --from="$filelist" "$expect" "include with exclude"
+
+  # negation pattern listed after the include it carves out: match is excluded
+expect="
+stuff
+stuff/source.go
+stuff/subdir"
+
+  run_buildah from $WITH_POLICY_JSON scratch
+  cid=$output
+  run_buildah add --include="**/*.go" --include="!**/nested.go" $cid ${mytest} /stuff
+  run_buildah_mount $cid
+  mnt=$output
+  run find $mnt -printf "%P\n"
+  filelist=$(LC_ALL=C sort <<<"$output")
+  run_buildah_umount $cid
+  expect_output --from="$filelist" "$expect" "negation after positive excludes the match"
+
+  # same patterns, reversed order: the later positive pattern overrides the negation
+expect="
+stuff
+stuff/source.go
+stuff/subdir
+stuff/subdir/nested.go"
+
+  run_buildah from $WITH_POLICY_JSON scratch
+  cid=$output
+  run_buildah add --include="!**/nested.go" --include="**/*.go" $cid ${mytest} /stuff
+  run_buildah_mount $cid
+  mnt=$output
+  run find $mnt -printf "%P\n"
+  filelist=$(LC_ALL=C sort <<<"$output")
+  run_buildah_umount $cid
+  expect_output --from="$filelist" "$expect" "later positive pattern overrides earlier negation"
+}

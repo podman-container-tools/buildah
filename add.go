@@ -129,6 +129,10 @@ type AddAndCopyOptions struct {
 	// KeepGitDir keeps the cloned ".git" subdirectory instead of stripping it out
 	// when set to true. This is only meaningful for Git sources. Defaults to false.
 	KeepGitDir bool
+	// Includes is a list of patterns to include, the complement to Excludes.
+	// Only items matching one of these patterns are copied. Has the same
+	// pattern format as lines of a .containerignore file.
+	Includes []string
 }
 
 // getURL writes a tar archive containing the named content
@@ -634,6 +638,7 @@ func (b *Builder) AddContext(ctx context.Context, destination string, extract bo
 						UIDMap:             srcUIDMap,
 						GIDMap:             srcGIDMap,
 						Excludes:           options.Excludes,
+						Includes:           options.Includes,
 						ExpandArchives:     extract,
 						Chmod:              options.Chmod,
 						ChownDirs:          chownDirs,
@@ -808,6 +813,7 @@ func (b *Builder) AddContext(ctx context.Context, destination string, extract bo
 					UIDMap:             srcUIDMap,
 					GIDMap:             srcGIDMap,
 					Excludes:           options.Excludes,
+					Includes:           options.Includes,
 					ExpandArchives:     extract,
 					Chmod:              options.Chmod,
 					ChownDirs:          chownDirs,
