@@ -345,20 +345,57 @@ func updateConfig(builder *buildah.Builder, c *cobra.Command, iopts configResult
 
 	if c.Flag("annotation").Changed {
 		for _, annotationSpec := range iopts.annotation {
-			annotation := strings.SplitN(annotationSpec, "=", 2)
-			switch {
-			case len(annotation) > 1:
-				builder.SetAnnotation(annotation[0], annotation[1])
-			case annotation[0] == "-":
-				builder.ClearAnnotations()
-			case strings.HasSuffix(annotation[0], "-"):
-				builder.UnsetAnnotation(strings.TrimSuffix(annotation[0], "-"))
-			default:
-				builder.SetAnnotation(annotation[0], "")
-			}
+			processAnnotationSpec(builder, annotationSpec)
 		}
 	}
 	return nil
+}
+
+// processAnnotationSpec parses `spec` that represents
+// an annotations action and performs the action by
+// calling corresponding methods of the `builder`.
+//
+// Two levels of annotations are recognized:
+//   - image annotations (no prefix),
+//   - per-layer annotations ("layer:" prefix).
+//
+// Following forms are supported for both levels:
+//   - "{key}={value}" - sets a key-value pair,
+//   - "{key}" - sets "" for the {key},
+//   - "{key}-" - trailing "-" removes an annotation for the {key},
+//   - "-" - removes all annotations.
+//
+// Note: key can be "" (an empty string).
+func processAnnotationSpec(builder *buildah.Builder, spec string) {
+	// Default to actions for image annotations.
+	setAction := builder.SetAnnotation
+	unsetAction := builder.UnsetAnnotation
+	clearAction := builder.ClearAnnotations
+
+	// Recognize per-layer annotations and set actions.
+	if after, ok := strings.CutPrefix(spec, "layer:"); ok {
+		spec = after
+		setAction = builder.SetTopLayerAnnotation
+		unsetAction = builder.UnsetTopLayerAnnotation
+		clearAction = builder.ClearTopLayerAnnotations
+	}
+
+	// Parse and process annotations.
+	annotation := strings.SplitN(spec, "=", 2)
+	switch {
+	// {key}={value} (set an annotation).
+	case len(annotation) > 1:
+		setAction(annotation[0], annotation[1])
+	// - (clear all annotations).
+	case annotation[0] == "-":
+		clearAction()
+	// {key}- (remove annotation by a key).
+	case strings.HasSuffix(annotation[0], "-"):
+		unsetAction(strings.TrimSuffix(annotation[0], "-"))
+	// {key} (set an annotation with an empty value).
+	default:
+		setAction(annotation[0], "")
+	}
 }
 
 func updateHealthcheck(builder *buildah.Builder, c *cobra.Command, iopts configResults) error {

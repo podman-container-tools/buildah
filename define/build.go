@@ -263,6 +263,9 @@ type BuildOptions struct {
 	// InheritAnnotations controls whether or not built images will retain the annotations
 	// which were set in their base images
 	InheritAnnotations types.OptionalBool
+	// InheritLayerAnnotations controls whether or not built images will retain the
+	// per-layer annotations which were set in their base images
+	InheritLayerAnnotations types.OptionalBool
 	// AddCapabilities is a list of capabilities to add to the default set when
 	// handling RUN instructions.
 	AddCapabilities []string
