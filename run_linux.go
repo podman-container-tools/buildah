@@ -52,8 +52,9 @@ import (
 	"tags.cncf.io/container-device-interface/pkg/parser"
 )
 
-// binfmtRegistered makes sure we only try to register binfmt_misc
-// interpreters once, the first time we handle a RUN instruction.
+// binfmtRegistered makes sure we only try to register binfmt_misc interpreters
+// once, the first time we handle a RUN instruction for something that looks
+// like it might need it.
 var binfmtRegistered sync.Once
 
 func setChildProcess() error {
@@ -189,7 +190,7 @@ func (b *Builder) RunContext(ctx context.Context, command []string, options RunO
 		platform := b.OCIv1.Platform
 		if os != platform.OS || arch != platform.Architecture || variant != platform.Variant {
 			binfmtRegistered.Do(func() {
-				if err := binfmt.Register(nil); err != nil {
+				if err := binfmt.MaybeRegister(nil); err != nil {
 					logrus.Warnf("registering binfmt_misc interpreters: %v", err)
 				}
 			})
