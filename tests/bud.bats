@@ -10874,3 +10874,24 @@ _EOF
     run_buildah --log-level error build $WITH_POLICY_JSON --layers -t quiet -f $contextdir/Containerfile $contextdir
     assert "$output" "!~" "Using cache"
 }
+
+@test "bud with add instruction caches git source" {
+    _prefetch busybox
+
+    repodir=${TEST_SCRATCH_DIR}/repository-add-git-cache
+    mkdir -p ${repodir}/podman.git
+    tar -C ${repodir}/podman.git -xz < ${TEST_SOURCES}/git-daemon/bare-podman-repo.tar.gz
+    starthttpd /git/=${repodir}:"git http-backend":GIT_HTTP_EXPORT_ALL=1:GIT_PROJECT_ROOT=${repodir} ${repodir}
+
+    contextdir=${TEST_SCRATCH_DIR}/add-git-cache
+    mkdir -p $contextdir
+    cat > $contextdir/Containerfile << _EOF
+FROM busybox
+ADD http://0.0.0.0:${HTTP_SERVER_PORT}/git/podman.git#v5.0.0 /podman-tag
+_EOF
+
+    run_buildah build $WITH_POLICY_JSON --layers -t source -f $contextdir/Containerfile $contextdir
+    run_buildah build $WITH_POLICY_JSON --layers -t source -f $contextdir/Containerfile $contextdir
+
+    expect_output --substring "Using cache"
+}

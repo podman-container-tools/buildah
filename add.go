@@ -671,7 +671,11 @@ func (b *Builder) AddContext(ctx context.Context, destination string, extract bo
 			}
 
 			wg.Go(func() {
-				b.ContentDigester.Start("")
+				if urlsource.IsGit(src) {
+					b.ContentDigester.Start("dir")
+				} else {
+					b.ContentDigester.Start("")
+				}
 				hashCloser := b.ContentDigester.Hash()
 				hasher := io.Writer(hashCloser)
 				if options.Hasher != nil {
