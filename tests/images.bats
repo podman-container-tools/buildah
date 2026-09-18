@@ -45,17 +45,17 @@ load helpers
 }
 
 @test "images filter test" {
-  _prefetch registry.k8s.io/pause busybox
-  run_buildah from --quiet --pull=false $WITH_POLICY_JSON registry.k8s.io/pause
+  _prefetch quay.io/libpod/k8s-pause:3.5 busybox
+  run_buildah from --quiet --pull=false $WITH_POLICY_JSON quay.io/libpod/k8s-pause:3.5
   cid1=$output
   run_buildah from --quiet --pull=false $WITH_POLICY_JSON busybox
   cid2=$output
 
-  run_buildah 125 images --noheading --filter since registry.k8s.io/pause
+  run_buildah 125 images --noheading --filter since quay.io/libpod/k8s-pause:3.5
   expect_output 'Error: invalid image filter "since": must be in the format "filter=value or filter!=value"'
 
 
-  run_buildah images --noheading --filter since=registry.k8s.io/pause
+  run_buildah images --noheading --filter since=quay.io/libpod/k8s-pause:3.5
   expect_line_count 1
 
   # pause* and u* should only give us pause image not busybox since its a AND between
