@@ -587,6 +587,11 @@ func (b *executor) getImageTypeAndHistoryAndDiffIDs(ctx context.Context, imageID
 	return oci.OS, oci.Architecture, manifestFormat, oci.History, oci.RootFS.DiffIDs, nil
 }
 
+func quoteLabelValue(value string) string {
+	quoted := fmt.Sprintf("%q", value)
+	return strings.ReplaceAll(quoted, "$", `\$`)
+}
+
 func (b *executor) buildStage(ctx context.Context, cleanupStages map[int]*stageExecutor, stages imagebuilder.Stages, stageIndex int, afterDependency map[int]int) (imageID string, commitResults *buildah.CommitResults, onlyBaseImage bool, err error) {
 	select {
 	case <-ctx.Done():
@@ -631,7 +636,7 @@ func (b *executor) buildStage(ctx context.Context, cleanupStages map[int]*stageE
 				key, value, _ := strings.Cut(labelSpec, "=")
 				// check only for an empty key since docker allows empty values
 				if key != "" {
-					fmt.Fprintf(&labelLine, " %q=%q", key, value)
+					fmt.Fprintf(&labelLine, " %q=%s", key, quoteLabelValue(value))
 				}
 			}
 			appendInstructions = slices.Concat(appendInstructions, []string{labelLine.String()})
