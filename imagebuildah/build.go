@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/containerd/platforms"
+	securejoin "github.com/cyphar/filepath-securejoin"
 	"github.com/hashicorp/go-multierror"
 	"github.com/mattn/go-shellwords"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -140,15 +141,43 @@ func BuildDockerfiles(ctx context.Context, store storage.Store, options define.B
 			}
 			data = resp.Body
 		} else {
-			dinfo, err := os.Stat(dfile)
-			if err != nil {
-				// If the Dockerfile isn't available, try again with
-				// context directory prepended (if not prepended yet).
-				if !strings.HasPrefix(dfile, options.ContextDirectory) {
+			if options.ContextDirectory != "" {
+				contextAbs, err := filepath.Abs(options.ContextDirectory)
+				if err != nil {
+					return "", nil, fmt.Errorf("resolving context directory %q: %w", options.ContextDirectory, err)
+				}
+				contextAbs, err = filepath.EvalSymlinks(contextAbs)
+				if err != nil {
+					return "", nil, fmt.Errorf("resolving context directory %q: %w", options.ContextDirectory, err)
+				}
+				contextAbs = filepath.Clean(contextAbs)
+
+				dfileAbs := dfile
+				if !filepath.IsAbs(dfileAbs) {
+					candidate := filepath.Join(contextAbs, dfile)
+					if _, err := os.Lstat(candidate); err == nil {
+						dfileAbs = candidate
+					} else if _, err := os.Lstat(dfile); err == nil {
+						dfileAbs, _ = filepath.Abs(dfile)
+					} else {
+						dfileAbs = candidate
+					}
+				}
+
+				if rel, err := filepath.Rel(contextAbs, dfileAbs); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+					resolved, err := securejoin.SecureJoin(contextAbs, rel)
+					if err != nil {
+						return "", nil, fmt.Errorf("resolving containerfile %q: %w", dfile, err)
+					}
+					dfile = resolved
+				}
+			} else {
+				if _, err := os.Lstat(dfile); err != nil && !filepath.IsAbs(dfile) && !strings.HasPrefix(dfile, options.ContextDirectory) {
 					dfile = filepath.Join(options.ContextDirectory, dfile)
-					dinfo, err = os.Stat(dfile)
 				}
 			}
+
+			dinfo, err := os.Stat(dfile)
 			if err != nil {
 				return "", nil, err
 			}
