@@ -532,7 +532,9 @@ parents/y/b.txt"
 
   run_buildah 1 run $from ls -l sub2.txt
 
-  run_buildah 1 run $from ls -l subdir/
+  # !*/sub1* un-excludes subdir/sub1.txt, nothing else
+  run_buildah run $from find subdir -mindepth 1 -print
+  assert "$output" = "subdir/sub1.txt"
 }
 
 @test "copy-preserving-extended-attributes" {
