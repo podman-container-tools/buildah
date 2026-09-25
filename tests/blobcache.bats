@@ -12,7 +12,7 @@ function setup_file() {
 	blobcachedir=${TEST_SCRATCH_DIR}/cache
 	mkdir -p ${blobcachedir}
 	# Pull an image using a fresh directory for the blob cache.
-	run_buildah pull --blob-cache=${blobcachedir} $WITH_POLICY_JSON registry.k8s.io/pause
+	run_buildah pull --blob-cache=${blobcachedir} $WITH_POLICY_JSON quay.io/libpod/k8s-pause:3.5
 	# Check that we dropped some files in there.
 	run find ${blobcachedir} -type f
 	echo "$output"
@@ -24,7 +24,7 @@ function setup_file() {
 	blobcachedir=${TEST_SCRATCH_DIR}/cache
 	mkdir -p ${blobcachedir}
 	# Pull an image using a fresh directory for the blob cache.
-	run_buildah from --blob-cache=${blobcachedir} $WITH_POLICY_JSON registry.k8s.io/pause
+	run_buildah from --blob-cache=${blobcachedir} $WITH_POLICY_JSON quay.io/libpod/k8s-pause:3.5
 	# Check that we dropped some files in there.
 	run find ${blobcachedir} -type f
 	echo "$output"
@@ -102,7 +102,7 @@ function _check_matches() {
 	blobcachedir=${TEST_SCRATCH_DIR}/cache
 	mkdir -p ${blobcachedir}
 	# Pull an image using a fresh directory for the blob cache.
-	run_buildah from --quiet --cidfile ${TEST_SCRATCH_DIR}/cid --blob-cache=${blobcachedir} $WITH_POLICY_JSON registry.k8s.io/pause
+	run_buildah from --quiet --cidfile ${TEST_SCRATCH_DIR}/cid --blob-cache=${blobcachedir} $WITH_POLICY_JSON quay.io/libpod/k8s-pause:3.5
 	ctr="$(< ${TEST_SCRATCH_DIR}/cid)"
 	run_buildah add ${ctr} $BUDFILES/add-file/file /
 	# Commit the image without using the blob cache, using compression so that uncompressed blobs
@@ -112,7 +112,7 @@ function _check_matches() {
 	run_buildah commit $WITH_POLICY_JSON --disable-compression=false ${ctr} dir:${doomeddir}
         _check_matches $doomeddir $blobcachedir \
                        0 "nothing" \
-                       6 "everything"
+                       5 "everything"
 
 	# Commit the image using the blob cache, again using compression.  We'll have recorded the
 	# compressed digests that match the uncompressed digests the last time around, so we should
@@ -122,7 +122,7 @@ function _check_matches() {
 	ls -l ${blobcachedir}
 	run_buildah commit $WITH_POLICY_JSON --blob-cache=${blobcachedir} --disable-compression=false ${ctr} dir:${destdir}
 	_check_matches $destdir $blobcachedir \
-                       5 "base layers, new layer, config, and manifest" \
+                       4 "base layers, new layer, config, and manifest" \
                        1 "version"
 }
 
@@ -131,7 +131,7 @@ function _check_matches() {
 	blobcachedir=${TEST_SCRATCH_DIR}/cache
 	mkdir -p ${blobcachedir}
 	# Pull an image using a fresh directory for the blob cache.
-	run_buildah from --quiet --cidfile ${TEST_SCRATCH_DIR}/cid --blob-cache=${blobcachedir} $WITH_POLICY_JSON registry.k8s.io/pause
+	run_buildah from --quiet --cidfile ${TEST_SCRATCH_DIR}/cid --blob-cache=${blobcachedir} $WITH_POLICY_JSON quay.io/libpod/k8s-pause:3.5
 	ctr="$(< ${TEST_SCRATCH_DIR}/cid)"
 	run_buildah add ${ctr} $BUDFILES/add-file/file /
 	# Commit the image using the blob cache.
@@ -144,7 +144,7 @@ function _check_matches() {
 	run_buildah push $WITH_POLICY_JSON ${target} dir:${doomeddir}
         _check_matches $doomeddir $blobcachedir \
                        2 "only config and new layer" \
-                       4 "version, manifest, base layers"
+                       3 "version, manifest, base layers"
 
 	# Now try to push the image using the blob cache.
 	destdir=${TEST_SCRATCH_DIR}/dest
@@ -153,7 +153,7 @@ function _check_matches() {
 
 	run_buildah push $WITH_POLICY_JSON --blob-cache=${blobcachedir} ${target} dir:${destdir}
         _check_matches $destdir $blobcachedir \
-                       5 "base image layers, new layer, config, and manifest" \
+                       4 "base image layers, new layer, config, and manifest" \
                        1 "version"
 }
 
