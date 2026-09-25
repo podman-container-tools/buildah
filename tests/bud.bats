@@ -303,12 +303,12 @@ EOF
       ;;
     --label=A=B)
       # Should have had the requested label set.
-      run jq -r '.OCIv1.config.Labels.["A"]' <<< "$output"
+      run jq -r '.OCIv1.config.Labels["A"]' <<< "$output"
       assert ${status} == 0
       assert "${output}" == B
       # Go back and check the base, as a control.
       run_buildah inspect -t image ${baseiid}
-      run jq '.OCIv1.config.Labels.["A"]' <<< "$output"
+      run jq '.OCIv1.config.Labels["A"]' <<< "$output"
       assert ${status} == 0
       assert "${output}" == null
       ;;
