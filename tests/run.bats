@@ -507,6 +507,63 @@ function configure_and_check_user() {
 	expect_output --substring "hello"
 }
 
+@test "run --mount=type=cache,sharing=private like buildkit" {
+	skip_if_no_runtime
+	_prefetch alpine
+	run_buildah from --quiet --pull=false $WITH_POLICY_JSON alpine
+	local holdercid=$output
+	run_buildah from --quiet --pull=false $WITH_POLICY_JSON alpine
+	local probecid=$output
+	local cachemount=type=cache,target=/cache,sharing=private
+	local holderlog=${TEST_SCRATCH_DIR}/holder.log
+	# put the cache under our scratch directory, not the real /var/tmp
+	export TMPDIR=${TEST_SCRATCH_DIR}
+	local cacheparent=${TEST_SCRATCH_DIR}/buildah-cache-$UID
+
+	# Hold the cache until we create /cache/release.  Invoked directly
+	# because run_buildah would give us the wrong $!.
+	CONTAINERS_CONF=${CONTAINERS_CONF:-${TEST_SOURCES}/containers.conf} \
+	      timeout --foreground --kill=10 90 \
+	      ${BUILDAH_BINARY} ${BUILDAH_REGISTRY_OPTS} ${ROOTDIR_OPTS} \
+	      run --mount $cachemount $holdercid \
+	      sh -c 'touch /cache/taken; while [ ! -e /cache/release ] ; do sleep 1; done' \
+	      > $holderlog 2>&1 3>&- &
+	local holderpid=$!
+
+	# wait for it to have taken a cache directory
+	local waited=0
+	while ! ls ${cacheparent}/*/taken > /dev/null 2>&1 ; do
+		kill -0 $holderpid 2> /dev/null || die "holder exited early: $(< $holderlog)"
+		test $((++waited)) -lt 600 || die "holder never took a cache directory"
+		sleep 0.1
+	done
+	local holderdir=$(dirname ${cacheparent}/*/taken)
+
+	# while the holder has that one, a second private mount gets a different
+	# directory, which starts out empty
+	run_buildah '?' run --mount $cachemount $probecid ls -A /cache
+	local privatestatus=$status privateoutput=$output
+	# but a shared mount takes no lock, so it uses the holder's directory
+	run_buildah '?' run --mount type=cache,target=/cache $probecid ls -A /cache
+	local sharedstatus=$status sharedoutput=$output
+
+	# release the holder before checking, so a failed check can't leave it running
+	touch $holderdir/release
+	wait $holderpid || die "holder failed: $(< $holderlog)"
+	assert "$privatestatus" -eq 0 "private mount failed: $privateoutput"
+	assert "$privateoutput" = "" "the private mount should have gotten an empty cache directory"
+	assert "$sharedstatus" -eq 0 "shared mount failed: $sharedoutput"
+	assert "$sharedoutput" = "taken" "the shared mount should have used the holder's directory"
+
+	# once the holder's directory is free again, the next private mount reuses it
+	run_buildah run --mount $cachemount $holdercid ls -A /cache
+	expect_output --substring "taken"
+
+	# the two cache directories, plus the one which holds their lock files
+	local -a dirs=(${cacheparent}/*/)
+	assert "${#dirs[@]}" -eq 3 "directories under ${cacheparent}: ${dirs[*]}"
+}
+
 @test "run symlinks" {
 	skip_if_no_runtime
 

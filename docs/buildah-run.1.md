@@ -178,7 +178,7 @@ Current supported mount TYPES are bind, cache, secret and tmpfs. Writes to `bind
 
               · from: stage name for the root of the source. Defaults to host cache directory.
 
-              · sharing: Whether other users of this cache need to wait for this command to complete (`sharing=locked`) or not (`sharing=shared`, which is the default).
+              · sharing: How this cache behaves when other commands are using it at the same time: they can all use it at once (`sharing=shared`, which is the default), other users wait for this command to finish (`sharing=locked`), or this command gets a cache directory to itself (`sharing=private`). Only `sharing=private` and `sharing=locked` lock the directory they use, so a `sharing=shared` command can still be using the same one.
 
               · z: Set shared SELinux label on mounted destination. Enabled by default if SELinux is enabled on the host machine.
 
@@ -421,6 +421,8 @@ buildah run --volume /path/on/host:/path/in/container:ro,z containerID sh
 buildah run -v /path/on/host:/path/in/container:z,U containerID sh
 
 buildah run --mount type=bind,src=/tmp/on:host,dst=/in:container,ro containerID sh
+
+buildah run --mount type=cache,target=/var/cache/dnf,sharing=private containerID dnf -y install gcc
 
 buildah run --valid-exit-codes 0,1 containerID grep pattern /etc/hosts
 

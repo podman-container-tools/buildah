@@ -3814,6 +3814,20 @@ var internalTestCases = []testCase{
 	},
 
 	{
+		name:              "mount-cache-sharing",
+		dockerUseBuildKit: true,
+		dockerfileContents: strings.Join([]string{
+			"FROM mirror.gcr.io/busybox",
+			"RUN --mount=type=cache,target=/cache,sharing=shared touch /cache/shared.txt",
+			"RUN --mount=type=cache,target=/cache,sharing=locked touch /cache/locked.txt",
+			"RUN --mount=type=cache,target=/cache,sharing=private touch /cache/private.txt",
+			"RUN mkdir -m 755 /results",
+			"RUN --mount=type=cache,target=/cache,sharing=private cp -a /cache/* /results",
+			"RUN touch -r /bin `find /results -print`",
+		}, "\n"),
+	},
+
+	{
 		name:              "mount-targets-new",
 		contextDir:        "mount-targets",
 		dockerUseBuildKit: true,
