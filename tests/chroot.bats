@@ -101,7 +101,7 @@ load helpers
   # and --map-groups, but fedora 37's is too old, so the older OUTER,INNER,SIZE
   # (using commas instead of colons as field separators) will have to do
   echo "env | sort" >> ${TEST_SCRATCH_DIR}/script.sh
-  echo "env _CONTAINERS_USERNS_CONFIGURED=done unshare -Umpf --mount-proc --setuid 0 --setgid 0 --map-users=${subid},0,${rangesize} --map-groups=${subid},0,${rangesize} ${TEST_SCRATCH_DIR}/copy ${storageopts} dir:$_BUILDAH_IMAGE_CACHEDIR/$baseimagef containers-storage:$baseimage" >> ${TEST_SCRATCH_DIR}/script.sh
+  echo "env _CONTAINERS_USERNS_CONFIGURED=done unshare -Umpf --mount-proc --setuid 0 --setgid 0 --map-users=${subid},0,${rangesize} --map-groups=${subid},0,${rangesize} ${TEST_SCRATCH_DIR}/copy $WITH_POLICY_JSON ${storageopts} dir:$_BUILDAH_IMAGE_CACHEDIR/$baseimagef containers-storage:$baseimage" >> ${TEST_SCRATCH_DIR}/script.sh
   # try to do a build with all of the volume mounts
   echo "env _CONTAINERS_USERNS_CONFIGURED=done unshare -Umpf --mount-proc --setuid 0 --setgid 0 --map-users=${subid},0,${rangesize} --map-groups=${subid},0,${rangesize} ${TEST_SCRATCH_DIR}/buildah ${BUILDAH_REGISTRY_OPTS} ${storageopts} build --isolation chroot --pull=never $mounts $context" >> ${TEST_SCRATCH_DIR}/script.sh
   # run that whole script in a nested mount namespace with no $XDG_...
@@ -255,7 +255,7 @@ EOF
   # confirm we really are in a setgroups-denied namespace -- the bug's precondition
   echo "test \"\$(cat /proc/self/setgroups)\" = deny" >> ${TEST_SCRATCH_DIR}/script.sh
   # seed the store from the prefetched cache so the build needs no network
-  echo "${TEST_SCRATCH_DIR}/copy ${storageopts} dir:\$_BUILDAH_IMAGE_CACHEDIR/$baseimagef containers-storage:$baseimage" >> ${TEST_SCRATCH_DIR}/script.sh
+  echo "${TEST_SCRATCH_DIR}/copy $WITH_POLICY_JSON ${storageopts} dir:\$_BUILDAH_IMAGE_CACHEDIR/$baseimagef containers-storage:$baseimage" >> ${TEST_SCRATCH_DIR}/script.sh
   # the actual regression: this build used to fail at the RUN step with EPERM
   echo "${TEST_SCRATCH_DIR}/buildah ${BUILDAH_REGISTRY_OPTS} ${storageopts} build --isolation chroot --pull=never $context" >> ${TEST_SCRATCH_DIR}/script.sh
 
@@ -349,7 +349,7 @@ EOF
   echo "mount -t tmpfs tmpfs /run/lock" >> ${TEST_SCRATCH_DIR}/script.sh
   # setgroups-denied single-ID namespace -- same environment as #6947
   echo "test \"\$(cat /proc/self/setgroups)\" = deny" >> ${TEST_SCRATCH_DIR}/script.sh
-  echo "${TEST_SCRATCH_DIR}/copy ${storageopts} dir:\$_BUILDAH_IMAGE_CACHEDIR/$baseimagef containers-storage:$baseimage" >> ${TEST_SCRATCH_DIR}/script.sh
+  echo "${TEST_SCRATCH_DIR}/copy $WITH_POLICY_JSON ${storageopts} dir:\$_BUILDAH_IMAGE_CACHEDIR/$baseimagef containers-storage:$baseimage" >> ${TEST_SCRATCH_DIR}/script.sh
   echo "ctr=\$(${TEST_SCRATCH_DIR}/buildah ${BUILDAH_REGISTRY_OPTS} ${storageopts} from --pull=never -q $baseimage)" >> ${TEST_SCRATCH_DIR}/script.sh
   echo "${TEST_SCRATCH_DIR}/buildah ${BUILDAH_REGISTRY_OPTS} ${storageopts} run --isolation chroot -v $probe:/probe:z \"\$ctr\" -- sh -c 'echo setgroups:\$(cat /proc/self/setgroups); stat -c \"member_denied=%u:%g:%a\" /probe/member_denied; stat -c \"nonmember_allowed=%u:%g:%a\" /probe/nonmember_allowed; grep ^Gid: /proc/self/status; cat /probe/nonmember_allowed && ! cat /probe/member_denied'" >> ${TEST_SCRATCH_DIR}/script.sh
 
