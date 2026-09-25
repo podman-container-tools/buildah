@@ -5,6 +5,7 @@
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/containers/buildah)](https://goreportcard.com/report/github.com/containers/buildah)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/10579/badge)](https://www.bestpractices.dev/projects/10579)
+[![inspect.software](https://raw.githubusercontent.com/inspect-software/badges/main/v1/p/podman-container-tools/buildah.svg)](https://inspect.software/software/podman-container-tools/buildah)
 
 
 The Buildah package provides a command line tool that can be used to
