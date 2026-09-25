@@ -744,6 +744,73 @@ func cleanerReldirectory(candidate string) string {
 	return cleaned
 }
 
+// lstatPathComponents walks name component by component using osRoot.Lstat,
+// returning the first error encountered (or nil).  This is used as a
+// read-only compatibility check against recent versions of go-archive/tar
+// which reject paths that escape from the root.
+func lstatPathComponents(osRoot *os.Root, name string) error {
+	var components []string
+	for name != "." && name != "/" {
+		components = append(components, name)
+		name = filepath.Dir(name)
+	}
+	for _, partial := range slices.Backward(components) {
+		if _, err := osRoot.Lstat(partial); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkArchivePathEscape is a read-only check verifying that a tar entry
+// path does not escape from the target directory.  It never modifies any
+// paths used for actual file operations.
+//
+// os.Root rejects symlinks with absolute targets (e.g. /var/run -> /run)
+// and relative targets that overshoot the root (e.g. /bin -> ../../../../../usr/bin),
+// even when those symlinks are valid inside a container.  When the raw
+// path is rejected, this function resolves symlinks with chroot-like
+// semantics and re-checks the resolved path through os.Root.
+func checkArchivePathEscape(osRoot *os.Root, root, directory, targetDirectory, cleanerHdrName string) error {
+	// Fast path: os.Root walks the raw entry path component by component.
+	// Example: "var/run/foo" where var/run is a plain directory -- OK.
+	err := lstatPathComponents(osRoot, cleanerHdrName)
+	if err == nil || errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+
+	// os.Root rejected the path.  This happens for in-container symlinks
+	// that are valid but look like escapes to os.Root:
+	//   - absolute:  /var/run -> /run      ("var/run/foo" rejected)
+	//   - relative:  /bin -> ../../../../usr/bin  ("bin/ls" rejected)
+	// Resolve symlinks treating root as a chroot boundary
+	// (absolute targets become root-relative, ".." is capped at root).
+	//   - /var/run -> /run  resolves to  root/run,   relPath = "run/foo"
+	//   - /bin -> ../../../../usr/bin  resolves to    relPath = "usr/bin/ls"
+	resolvedPath, resolveErr := resolvePath(root, filepath.Join(directory, cleanerHdrName), false)
+	if resolveErr != nil {
+		return errors.Join(err, resolveErr)
+	}
+
+	// Verify the resolved path did not land outside targetDirectory.
+	relPath, relErr := filepath.Rel(targetDirectory, resolvedPath)
+	if relErr != nil {
+		return errors.Join(err, relErr)
+	}
+	if !filepath.IsLocal(relPath) {
+		return err
+	}
+
+	// Re-check the resolved (symlink-free) path through os.Root.
+	// Example: "run/foo" or "usr/bin/ls" -- no symlinks left, os.Root is
+	// happy.  If os.Root still rejects it, it is a genuine escape.
+	resolvedErr := lstatPathComponents(osRoot, relPath)
+	if resolvedErr == nil || errors.Is(resolvedErr, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
 // convertToRelSubdirectory returns the path of directory, bound and relative to
 // root, as a relative path, or an error if that path can't be computed or if
 // the two directories are on different volumes
@@ -2361,19 +2428,7 @@ func copierHandlerPut(ctx context.Context, bulkReader io.Reader, req request, id
 			// of the root, to improve our compatibility with
 			// recent versions of go-archive
 			cleanerHdrName := cleanerReldirectory(filepath.FromSlash(hdr.Name))
-			if err := func(hdrName string) error {
-				var hdrNameByComponent []string
-				for hdrName != "." && hdrName != "/" {
-					hdrNameByComponent = append(hdrNameByComponent, hdrName)
-					hdrName = filepath.Dir(hdrName)
-				}
-				for _, partial := range slices.Backward(hdrNameByComponent) {
-					if _, err := osRoot.Lstat(partial); err != nil {
-						return err
-					}
-				}
-				return nil
-			}(cleanerHdrName); err != nil && !errors.Is(err, os.ErrNotExist) {
+			if err := checkArchivePathEscape(osRoot, req.Root, req.Directory, targetDirectory, cleanerHdrName); err != nil {
 				return err
 			}
 			// figure out who should own this new item

@@ -982,6 +982,361 @@ func testPut(ctx context.Context, t *testing.T, expectedError error) {
 		require.NoError(t, err)
 		assertCtimeMatches(t, fi2, fi1)
 	})
+
+	// Extracting through an in-root absolute symlink (e.g. /var/run -> /run)
+	// must succeed.  os.Root refuses absolute symlinks, so Put falls back to
+	// chroot-style resolution when os.Root rejects an entry.
+	// Layout: root/run/ (dir), root/var/run -> /run (absolute symlink).
+	// Archive: "var/run/foo".  Expected: file lands at root/run/foo.
+	t.Run("put through absolute in-root symlink", func(t *testing.T) {
+		if os.PathSeparator != '/' {
+			t.Skip("absolute /run symlink layout is Unix-specific")
+		}
+		tmp := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(tmp, "run"), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(tmp, "var"), 0o755))
+		require.NoError(t, os.Symlink("/run", filepath.Join(tmp, "var", "run")))
+
+		archive := makeArchive([]tar.Header{
+			{Name: "var/run/foo", Typeflag: tar.TypeReg, Mode: 0o600, ModTime: testDate},
+		}, map[string][]byte{"var/run/foo": []byte("hi\n")})
+		err := PutContext(ctx, tmp, tmp, PutOptions{UIDMap: uidMap, GIDMap: gidMap}, archive)
+		if expectedError != nil {
+			require.ErrorContains(t, err, expectedError.Error())
+			return
+		}
+		require.NoError(t, err)
+		got, err := os.ReadFile(filepath.Join(tmp, "run", "foo"))
+		require.NoError(t, err)
+		assert.Equal(t, "hi\n", string(got))
+	})
+
+	// A symlink pointing to ".." is capped at the extraction root by
+	// resolvePath (chroot semantics), so files extracted through it land
+	// inside root.  This matches real chroot behavior and is safe.
+	// Layout: empty root (symlink created by the archive itself).
+	// Archive: "escape" -> "..", "escape/etc/passwd".
+	// Expected: file lands at root/etc/passwd (".." capped at root).
+	t.Run("put through dotdot symlink capped at root", func(t *testing.T) {
+		if os.PathSeparator != '/' {
+			t.Skip("symlink test is Unix-specific")
+		}
+		tmp := t.TempDir()
+
+		archive := makeArchive([]tar.Header{
+			{Name: "escape", Typeflag: tar.TypeSymlink, Linkname: "..", Mode: 0o777, ModTime: testDate},
+			{Name: "escape/etc/passwd", Typeflag: tar.TypeReg, Mode: 0o600, ModTime: testDate},
+		}, map[string][]byte{"escape/etc/passwd": []byte("evil\n")})
+		err := PutContext(ctx, tmp, tmp, PutOptions{UIDMap: uidMap, GIDMap: gidMap}, archive)
+		if expectedError != nil {
+			require.ErrorContains(t, err, expectedError.Error())
+			return
+		}
+		require.NoError(t, err)
+		got, err := os.ReadFile(filepath.Join(tmp, "etc", "passwd"))
+		require.NoError(t, err)
+		assert.Equal(t, "evil\n", string(got))
+	})
+
+	// A relative symlink that overshoots the root is valid inside a container
+	// -- resolvePath caps ".." at root.
+	// Layout: root/usr/bin/ (dir), root/bin -> ../../../../../usr/bin.
+	// Archive: "bin/tool".  Expected: file lands at root/usr/bin/tool.
+	t.Run("put through overshooting relative symlink", func(t *testing.T) {
+		if os.PathSeparator != '/' {
+			t.Skip("symlink test is Unix-specific")
+		}
+		tmp := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(tmp, "usr", "bin"), 0o755))
+		require.NoError(t, os.Symlink("../../../../../usr/bin", filepath.Join(tmp, "bin")))
+
+		archive := makeArchive([]tar.Header{
+			{Name: "bin/tool", Typeflag: tar.TypeReg, Mode: 0o755, ModTime: testDate},
+		}, map[string][]byte{"bin/tool": []byte("#!/bin/sh\n")})
+		err := PutContext(ctx, tmp, tmp, PutOptions{UIDMap: uidMap, GIDMap: gidMap}, archive)
+		if expectedError != nil {
+			require.ErrorContains(t, err, expectedError.Error())
+			return
+		}
+		require.NoError(t, err)
+		got, err := os.ReadFile(filepath.Join(tmp, "usr", "bin", "tool"))
+		require.NoError(t, err)
+		assert.Equal(t, "#!/bin/sh\n", string(got))
+	})
+
+	// A chain of symlinks (a -> b, b -> /run) must be followed correctly.
+	// Layout: root/run/ (dir), root/b -> /run, root/a -> b.
+	// Archive: "a/data".  Expected: file lands at root/run/data.
+	t.Run("put through chained symlinks", func(t *testing.T) {
+		if os.PathSeparator != '/' {
+			t.Skip("symlink test is Unix-specific")
+		}
+		tmp := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(tmp, "run"), 0o755))
+		require.NoError(t, os.Symlink("/run", filepath.Join(tmp, "b")))
+		require.NoError(t, os.Symlink("b", filepath.Join(tmp, "a")))
+
+		archive := makeArchive([]tar.Header{
+			{Name: "a/data", Typeflag: tar.TypeReg, Mode: 0o600, ModTime: testDate},
+		}, map[string][]byte{"a/data": []byte("chain\n")})
+		err := PutContext(ctx, tmp, tmp, PutOptions{UIDMap: uidMap, GIDMap: gidMap}, archive)
+		if expectedError != nil {
+			require.ErrorContains(t, err, expectedError.Error())
+			return
+		}
+		require.NoError(t, err)
+		got, err := os.ReadFile(filepath.Join(tmp, "run", "data"))
+		require.NoError(t, err)
+		assert.Equal(t, "chain\n", string(got))
+	})
+
+	// A symlink loop (a -> b, b -> a) must be rejected.
+	// Layout: root/a -> b, root/b -> a.
+	// Archive: "a/file".  Expected: error (ELOOP).
+	t.Run("put through symlink loop", func(t *testing.T) {
+		if os.PathSeparator != '/' {
+			t.Skip("symlink test is Unix-specific")
+		}
+		tmp := t.TempDir()
+		require.NoError(t, os.Symlink("b", filepath.Join(tmp, "a")))
+		require.NoError(t, os.Symlink("a", filepath.Join(tmp, "b")))
+
+		archive := makeArchive([]tar.Header{
+			{Name: "a/file", Typeflag: tar.TypeReg, Mode: 0o600, ModTime: testDate},
+		}, map[string][]byte{"a/file": []byte("loop\n")})
+		err := PutContext(ctx, tmp, tmp, PutOptions{UIDMap: uidMap, GIDMap: gidMap}, archive)
+		if expectedError != nil {
+			require.ErrorContains(t, err, expectedError.Error())
+			return
+		}
+		require.Error(t, err, "symlink loop should be rejected")
+	})
+
+	// Extracting into a subdirectory where a symlink escapes to root level
+	// must fail.  This simulates ADD foobar.tar /dest where /dest/link -> /etc.
+	// Layout: root/dest/ (dir), root/etc/ (dir), root/dest/link -> /etc.
+	// Archive: "link/passwd".  Expected: error (escapes targetDirectory).
+	t.Run("put subdir: symlink escapes targetDirectory", func(t *testing.T) {
+		if os.PathSeparator != '/' {
+			t.Skip("symlink test is Unix-specific")
+		}
+		tmp := t.TempDir()
+		dest := filepath.Join(tmp, "dest")
+		require.NoError(t, os.MkdirAll(dest, 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(tmp, "etc"), 0o755))
+		require.NoError(t, os.Symlink("/etc", filepath.Join(dest, "link")))
+
+		archive := makeArchive([]tar.Header{
+			{Name: "link/passwd", Typeflag: tar.TypeReg, Mode: 0o600, ModTime: testDate},
+		}, map[string][]byte{"link/passwd": []byte("escaped\n")})
+		err := PutContext(ctx, tmp, dest, PutOptions{UIDMap: uidMap, GIDMap: gidMap}, archive)
+		if expectedError != nil {
+			require.ErrorContains(t, err, expectedError.Error())
+			return
+		}
+		require.Error(t, err, "symlink escaping targetDirectory should be rejected")
+	})
+
+	// Extracting into a subdirectory where a ".." symlink escapes to the
+	// parent must fail.
+	// Layout: root/dest/ (dir), root/dest/up -> "..".
+	// Archive: "up/secret".  Expected: error (escapes targetDirectory).
+	t.Run("put subdir: dotdot symlink escapes targetDirectory", func(t *testing.T) {
+		if os.PathSeparator != '/' {
+			t.Skip("symlink test is Unix-specific")
+		}
+		tmp := t.TempDir()
+		dest := filepath.Join(tmp, "dest")
+		require.NoError(t, os.MkdirAll(dest, 0o755))
+		require.NoError(t, os.Symlink("..", filepath.Join(dest, "up")))
+
+		archive := makeArchive([]tar.Header{
+			{Name: "up/secret", Typeflag: tar.TypeReg, Mode: 0o600, ModTime: testDate},
+		}, map[string][]byte{"up/secret": []byte("escaped\n")})
+		err := PutContext(ctx, tmp, dest, PutOptions{UIDMap: uidMap, GIDMap: gidMap}, archive)
+		if expectedError != nil {
+			require.ErrorContains(t, err, expectedError.Error())
+			return
+		}
+		require.Error(t, err, "dotdot symlink escaping targetDirectory should be rejected")
+	})
+
+	// Verify that a file placed via an escape symlink does not actually
+	// appear outside the targetDirectory on the host filesystem.
+	// Layout: root/dest/ (dir), root/dest/link -> /etc, root/etc/ (dir).
+	// Archive: "link/shadow".  Expected: error AND root/etc/shadow must NOT exist.
+	t.Run("put subdir: escaped file must not exist on host", func(t *testing.T) {
+		if os.PathSeparator != '/' {
+			t.Skip("symlink test is Unix-specific")
+		}
+		tmp := t.TempDir()
+		dest := filepath.Join(tmp, "dest")
+		require.NoError(t, os.MkdirAll(dest, 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(tmp, "etc"), 0o755))
+		require.NoError(t, os.Symlink("/etc", filepath.Join(dest, "link")))
+
+		archive := makeArchive([]tar.Header{
+			{Name: "link/shadow", Typeflag: tar.TypeReg, Mode: 0o600, ModTime: testDate},
+		}, map[string][]byte{"link/shadow": []byte("root:!\n")})
+		err := PutContext(ctx, tmp, dest, PutOptions{UIDMap: uidMap, GIDMap: gidMap}, archive)
+		if expectedError != nil {
+			require.ErrorContains(t, err, expectedError.Error())
+			return
+		}
+		require.Error(t, err, "escape should be rejected")
+		_, statErr := os.Lstat(filepath.Join(tmp, "etc", "shadow"))
+		assert.True(t, errors.Is(statErr, os.ErrNotExist), "escaped file must not exist at root/etc/shadow")
+	})
+}
+
+func TestCheckArchivePathEscape(t *testing.T) {
+	if os.PathSeparator != '/' {
+		t.Skip("symlink layout tests are Unix-specific")
+	}
+
+	// setup creates a temp directory with the given structure and returns
+	// (root, osRoot).  Each entry is "type:path:target":
+	//   "dir:path"              - directory
+	//   "symlink:path:target"   - symbolic link
+	//   "file:path"             - regular file
+	setup := func(t *testing.T, entries ...string) (string, *os.Root) {
+		t.Helper()
+		root := t.TempDir()
+		for _, entry := range entries {
+			parts := strings.SplitN(entry, ":", 3)
+			full := filepath.Join(root, parts[1])
+			switch parts[0] {
+			case "dir":
+				require.NoError(t, os.MkdirAll(full, 0o755))
+			case "symlink":
+				require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+				require.NoError(t, os.Symlink(parts[2], full))
+			case "file":
+				require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+				require.NoError(t, os.WriteFile(full, []byte("x"), 0o644))
+			}
+		}
+		osRoot, err := os.OpenRoot(root)
+		require.NoError(t, err)
+		t.Cleanup(func() { osRoot.Close() })
+		return root, osRoot
+	}
+
+	for _, tc := range []struct {
+		name    string
+		entries []string // filesystem layout
+		subdir  string   // if set, use this subdirectory as targetDirectory
+		path    string   // tar entry path to check
+		wantErr bool
+	}{
+		// --- paths that should be accepted ---
+		{
+			name:    "plain directory path",
+			entries: []string{"dir:var/run"},
+			path:    "var/run/foo",
+		},
+		{
+			name:    "nonexistent path with no symlinks",
+			entries: []string{},
+			path:    "some/new/file",
+		},
+		{
+			name:    "absolute symlink inside root /var/run -> /run",
+			entries: []string{"dir:run", "symlink:var/run:/run"},
+			path:    "var/run/foo",
+		},
+		{
+			name:    "absolute symlink to nested dir /opt -> /usr/local",
+			entries: []string{"dir:usr/local", "symlink:opt:/usr/local"},
+			path:    "opt/bin/tool",
+		},
+		{
+			name:    "relative symlink overshooting root /bin -> ../../../../../usr/bin",
+			entries: []string{"dir:usr/bin", "symlink:bin:../../../../../usr/bin"},
+			path:    "bin/ls",
+		},
+		{
+			name:    "dotdot symlink at root level capped by resolvePath",
+			entries: []string{"symlink:escape:.."},
+			path:    "escape/etc/passwd",
+		},
+		{
+			name:    "chain of symlinks a -> b, b -> /run",
+			entries: []string{"dir:run", "symlink:b:/run", "symlink:a:b"},
+			path:    "a/foo",
+		},
+		{
+			name:    "plain file at root level",
+			entries: []string{},
+			path:    "single-file",
+		},
+		{
+			name:    "path is root itself",
+			entries: []string{},
+			path:    ".",
+		},
+		{
+			name:    "relative symlink staying inside root",
+			entries: []string{"dir:real", "symlink:link:real"},
+			path:    "link/file",
+		},
+		{
+			name:    "deeply nested absolute symlink /a/b/c -> /x/y",
+			entries: []string{"dir:x/y", "dir:a/b", "symlink:a/b/c:/x/y"},
+			path:    "a/b/c/file",
+		},
+		{
+			name:    "subdir: absolute symlink stays inside targetDirectory",
+			entries: []string{"dir:dest/run", "symlink:dest/var/run:/dest/run"},
+			subdir:  "dest",
+			path:    "var/run/foo",
+		},
+		// --- paths that should be rejected ---
+		{
+			name:    "subdir: absolute symlink escapes to root level",
+			entries: []string{"dir:dest", "dir:etc", "symlink:dest/link:/etc"},
+			subdir:  "dest",
+			path:    "link/passwd",
+			wantErr: true,
+		},
+		{
+			name:    "subdir: dotdot symlink escapes targetDirectory",
+			entries: []string{"dir:dest", "symlink:dest/up:.."},
+			subdir:  "dest",
+			path:    "up/etc/passwd",
+			wantErr: true,
+		},
+		{
+			name:    "symlink loop causes resolvePath ELOOP failure",
+			entries: []string{"symlink:a:b", "symlink:b:a"},
+			path:    "a/file",
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, osRoot := setup(t, tc.entries...)
+			targetDir := root
+			dir := root
+			// Simulate ADD foobar.tar /subdir: scope osRoot and
+			// targetDirectory to the subdirectory while root
+			// stays the container rootfs.
+			if tc.subdir != "" {
+				targetDir = filepath.Join(root, tc.subdir)
+				dir = targetDir
+				osRoot.Close()
+				var err error
+				osRoot, err = os.OpenRoot(targetDir)
+				require.NoError(t, err)
+				t.Cleanup(func() { osRoot.Close() })
+			}
+			err := checkArchivePathEscape(osRoot, root, dir, targetDir, tc.path)
+			if tc.wantErr {
+				assert.Error(t, err, "expected checkArchivePathEscape to reject %q", tc.path)
+			} else {
+				assert.NoError(t, err, "expected checkArchivePathEscape to accept %q", tc.path)
+			}
+		})
+	}
 }
 
 func isExpectedError(err error, inSubdir bool, name string, expectedErrors []expectedError) bool {
