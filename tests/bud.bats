@@ -8832,6 +8832,67 @@ _EOF
   run_buildah build $WITH_POLICY_JSON ${contextdir}
 }
 
+# https://github.com/podman-container-tools/buildah/issues/6861
+# https://github.com/podman-container-tools/buildah/pull/6885
+@test "bud -f rejects symlinked Dockerfile escaping context" {
+  local contextdir=${TEST_SCRATCH_DIR}/context
+  mkdir -p ${contextdir}
+  cat > ${TEST_SCRATCH_DIR}/secret << _EOF
+FROM alpine
+RUN echo SECRETHOSTCONTENT
+_EOF
+  ln -s ../secret ${contextdir}/Dockerfile
+
+  run_buildah 125 build $WITH_POLICY_JSON -f ${contextdir}/Dockerfile ${contextdir}
+  assert "$output" !~ "SECRETHOSTCONTENT"
+}
+
+# https://github.com/podman-container-tools/buildah/pull/6885
+# Reproduces the bypass reported by Honny1: context accessed via symlink
+@test "bud -f rejects symlink escape via symlinked context directory" {
+  local realdir=${TEST_SCRATCH_DIR}/real
+  local linkdir=${TEST_SCRATCH_DIR}/link
+  mkdir -p ${realdir}
+  echo 'FROM scratch' > ${TEST_SCRATCH_DIR}/secret
+  ln -s ../secret ${realdir}/Dockerfile
+  ln -s ${realdir} ${linkdir}
+
+  run_buildah 125 build $WITH_POLICY_JSON -f ${linkdir}/Dockerfile ${realdir}
+  assert "$output" !~ "FROM scratch"
+}
+
+# https://github.com/podman-container-tools/buildah/pull/6885
+# External -f path is read as a host path (Docker/man-page behavior).
+# RESOLVE_IN_ROOT is only applied when -f is under the context.
+@test "bud -f with external containerfile reads host path" {
+  _prefetch alpine
+
+  local contextdir=${TEST_SCRATCH_DIR}/context
+  mkdir -p ${contextdir}
+  cat > ${TEST_SCRATCH_DIR}/External.Dockerfile << _EOF
+FROM alpine
+RUN echo external-f-works
+_EOF
+
+  run_buildah build $WITH_POLICY_JSON -f ${TEST_SCRATCH_DIR}/External.Dockerfile ${contextdir}
+  assert "$output" =~ "external-f-works"
+}
+
+# https://github.com/podman-container-tools/buildah/pull/6885
+@test "bud -f accepts containerfile within context" {
+  _prefetch alpine
+
+  local contextdir=${TEST_SCRATCH_DIR}/context
+  mkdir -p ${contextdir}/subdir
+  cat > ${contextdir}/subdir/Containerfile.real << _EOF
+FROM alpine
+RUN echo explicit-f-within-context-works
+_EOF
+
+  run_buildah build $WITH_POLICY_JSON -f ${contextdir}/subdir/Containerfile.real ${contextdir}
+  assert "$output" =~ "explicit-f-within-context-works"
+}
+
 @test "build-validates-bind-bind-propagation" {
   _prefetch alpine
 

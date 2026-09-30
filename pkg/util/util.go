@@ -73,7 +73,7 @@ func DiscoverContainerfile(path string) (foundCtrFile string, err error) {
 	case target.IsDir():
 		for _, name := range []string{"Containerfile", "Dockerfile"} {
 			ctrfile := filepath.Join(path, name)
-			if resolved, ok := isRegularFileInContext(path, ctrfile); ok {
+			if resolved, ok := IsRegularFileInContext(path, ctrfile); ok {
 				return resolved, nil
 			}
 		}
@@ -93,18 +93,25 @@ func DiscoverContainerfile(path string) (foundCtrFile string, err error) {
 	}
 }
 
-// isRegularFileInContext checks whether path resolves to a regular file
+// ResolveInContext resolves path within contextDir using RESOLVE_IN_ROOT
+// semantics (securejoin.SecureJoin): ".." components are clamped to the root
+// and absolute symlink targets are re-rooted under contextDir.
+func ResolveInContext(contextDir, path string) (string, error) {
+	name, err := filepath.Rel(contextDir, path)
+	if err != nil {
+		return "", err
+	}
+	return securejoin.SecureJoin(contextDir, name)
+}
+
+// IsRegularFileInContext checks whether path resolves to a regular file
 // inside contextDir using RESOLVE_IN_ROOT semantics (securejoin.SecureJoin):
 // ".." components are clamped to the root and absolute symlink targets are
 // re-rooted under contextDir.  This matches Docker BuildKit's behavior.
 //
 // On success it returns the resolved host path.
-func isRegularFileInContext(contextDir, path string) (string, bool) {
-	name, err := filepath.Rel(contextDir, path)
-	if err != nil {
-		return "", false
-	}
-	resolved, err := securejoin.SecureJoin(contextDir, name)
+func IsRegularFileInContext(contextDir, path string) (string, bool) {
+	resolved, err := ResolveInContext(contextDir, path)
 	if err != nil {
 		return "", false
 	}
