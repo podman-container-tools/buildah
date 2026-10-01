@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/containerd/platforms"
+	securejoin "github.com/cyphar/filepath-securejoin"
 	"github.com/hashicorp/go-multierror"
 	"github.com/mattn/go-shellwords"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -121,6 +122,14 @@ func BuildDockerfiles(ctx context.Context, store storage.Store, options define.B
 		}
 	}
 
+	var contextAbs string
+	if options.ContextDirectory != "" {
+		contextAbs, err = filepath.Abs(options.ContextDirectory)
+		if err != nil {
+			return "", nil, fmt.Errorf("resolving context directory %q: %w", options.ContextDirectory, err)
+		}
+	}
+
 	for _, dfile := range paths {
 		var data io.Reader
 
@@ -140,15 +149,29 @@ func BuildDockerfiles(ctx context.Context, store storage.Store, options define.B
 			}
 			data = resp.Body
 		} else {
-			dinfo, err := os.Stat(dfile)
-			if err != nil {
-				// If the Dockerfile isn't available, try again with
-				// context directory prepended (if not prepended yet).
-				if !strings.HasPrefix(dfile, options.ContextDirectory) {
-					dfile = filepath.Join(options.ContextDirectory, dfile)
-					dinfo, err = os.Stat(dfile)
+			if contextAbs != "" {
+				dfileAbs := dfile
+				if !filepath.IsAbs(dfileAbs) {
+					if _, err := os.Lstat(dfileAbs); err == nil {
+						dfileAbs, err = filepath.Abs(dfileAbs)
+						if err != nil {
+							return "", nil, fmt.Errorf("resolving containerfile %q: %w", dfile, err)
+						}
+					} else {
+						dfileAbs = filepath.Join(contextAbs, dfileAbs)
+					}
+				}
+
+				if rel, err := filepath.Rel(contextAbs, dfileAbs); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+					resolved, err := securejoin.SecureJoin(contextAbs, rel)
+					if err != nil {
+						return "", nil, fmt.Errorf("resolving containerfile %q: %w", dfile, err)
+					}
+					dfile = resolved
 				}
 			}
+
+			dinfo, err := os.Stat(dfile)
 			if err != nil {
 				return "", nil, err
 			}
