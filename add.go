@@ -767,7 +767,8 @@ func (b *Builder) AddContext(ctx context.Context, destination string, extract bo
 			}
 			st := localSourceStat.Results[globbed]
 			if options.Link && st.ModTime.After(latestTimestamp) {
-				latestTimestamp = st.ModTime
+				// history timestamps are normalized to UTC in buildah, --link shouldn't be an exception
+				latestTimestamp = st.ModTime.UTC()
 			}
 			pipeReader, pipeWriter := io.Pipe()
 			wg.Go(func() {

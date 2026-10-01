@@ -10915,3 +10915,62 @@ _EOF
 
     expect_output --substring "Using cache"
 }
+
+@test "bud --link cache with relative destination" {
+    _prefetch alpine
+    local contextdir=${TEST_SCRATCH_DIR}/bud/link-relative
+    mkdir -p $contextdir
+    echo "test content" > $contextdir/testfile.txt
+    cat > $contextdir/Containerfile << _EOF
+FROM alpine
+WORKDIR /app
+COPY --link testfile.txt ./
+RUN cat /app/testfile.txt
+_EOF
+
+    run_buildah build --layers $WITH_POLICY_JSON -t link-rel1 $contextdir
+    run_buildah build --layers $WITH_POLICY_JSON -t link-rel2 $contextdir
+    expect_output --substring "COPY --link testfile.txt ./
+--> Using cache"
+    expect_output --substring "RUN cat /app/testfile.txt
+--> Using cache"
+
+    # a --no-cache build must still produce layers a later build can reuse
+    run_buildah rmi -a -f
+    _prefetch alpine
+    run_buildah build --no-cache --layers $WITH_POLICY_JSON -t link-rel3 $contextdir
+    run_buildah build --layers $WITH_POLICY_JSON -t link-rel4 $contextdir
+    expect_output --substring "COPY --link testfile.txt ./
+--> Using cache"
+
+    # change contents so earlier steps hit the cache but COPY misses
+    # the layer committed on that miss must be reusable by the next build
+    echo "modified content" > $contextdir/testfile.txt
+    run_buildah build --layers $WITH_POLICY_JSON -t link-rel5 $contextdir
+    run_buildah build --layers $WITH_POLICY_JSON -t link-rel6 $contextdir
+    expect_output --substring "COPY --link testfile.txt ./
+--> Using cache"
+}
+
+@test "bud --link cache with --from and relative destination" {
+    _prefetch alpine
+    local contextdir=${TEST_SCRATCH_DIR}/bud/link-from-rel
+    mkdir -p $contextdir
+    echo "test content" > $contextdir/testfile.txt
+    cat > $contextdir/Containerfile << _EOF
+FROM alpine AS builder
+COPY testfile.txt /src/testfile.txt
+
+FROM alpine
+WORKDIR /app
+COPY --from=builder --link /src/testfile.txt ./
+RUN cat /app/testfile.txt
+_EOF
+
+    run_buildah build --layers $WITH_POLICY_JSON -t link-from-rel1 $contextdir
+    run_buildah build --layers $WITH_POLICY_JSON -t link-from-rel2 $contextdir
+    expect_output --substring "COPY --from=builder --link /src/testfile.txt ./
+--> Using cache"
+expect_output --substring "RUN cat /app/testfile.txt
+--> Using cache"
+}
