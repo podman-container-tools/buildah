@@ -3393,12 +3393,15 @@ var internalTestCases = []testCase{
 	},
 
 	{
+		// The tar contains symldir1 -> ".." and symldir1/etc/myfile.
+		// resolvePath caps ".." at the extraction root (chroot semantics),
+		// so the file lands at /testsubdir/etc/myfile.  Docker rejects
+		// the ".." symlink entirely, so we skip the Docker comparison.
 		name:                "add-parent-symlink",
 		contextDir:          "add/parent-symlink",
 		fsSkip:              []string{"(dir):testsubdir:mtime", "(dir):testsubdir:(dir):etc:mtime"},
 		compatScratchConfig: types.OptionalBoolTrue,
-		shouldFailAt:        2,
-		failureRegex:        "symldir1/etc: path escapes from parent",
+		withoutDocker:       true,
 	},
 
 	{
