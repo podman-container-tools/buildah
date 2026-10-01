@@ -1228,16 +1228,21 @@ func manifestPush(systemContext *types.SystemContext, store storage.Store, listI
 		options.DestinationTimestamp = &ts
 	}
 	_, digest, err := list.Push(getContext(), dest, options)
-
-	if err == nil && opts.rm {
-		_, err = store.DeleteImage(manifestList.ID(), true)
+	if err != nil {
+		return err
 	}
 
 	if opts.digestfile != "" {
-		if err = os.WriteFile(opts.digestfile, []byte(digest.String()), 0o644); err != nil {
+		if err := os.WriteFile(opts.digestfile, []byte(digest.String()), 0o644); err != nil {
 			return util.GetFailureCause(err, fmt.Errorf("failed to write digest to file %q: %w", opts.digestfile, err))
 		}
 	}
 
-	return err
+	if opts.rm {
+		if _, err := store.DeleteImage(manifestList.ID(), true); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

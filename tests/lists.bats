@@ -345,7 +345,25 @@ IMAGE_LIST_S390X_INSTANCE_DIGEST=sha256:fc5aae77765f7f26f729bad7bfb3cef1bf4e9260
     run_buildah manifest add --arch=arm64 foo ${IMAGE_LIST}
     run_buildah manifest inspect foo
     run_buildah 125 manifest push --authfile /tmp/nonexistent $WITH_POLICY_JSON --purge foo dir:${TEST_SCRATCH_DIR}/pushed
+}
 
+@test "manifest-push-digestfile" {
+    run_buildah manifest create foo
+    run_buildah manifest add --arch=arm64 foo ${IMAGE_LIST}
+    digestfile=${TEST_SCRATCH_DIR}/digest.txt
+    run_buildah manifest push --digestfile "$digestfile" $WITH_POLICY_JSON foo dir:${TEST_SCRATCH_DIR}/pushed
+    pushed_digest=$(sha256sum ${TEST_SCRATCH_DIR}/pushed/manifest.json | awk '{print $1}')
+    expect_output --from="$(< "$digestfile")" "sha256:${pushed_digest}"
+}
+
+@test "manifest-push with digestfile should fail on push error without writing file" {
+    run_buildah manifest create foo
+    run_buildah manifest add --arch=arm64 foo ${IMAGE_LIST}
+    digestfile=${TEST_SCRATCH_DIR}/digest.txt
+    touch ${TEST_SCRATCH_DIR}/not-a-dir
+    run_buildah 125 manifest push --digestfile "$digestfile" $WITH_POLICY_JSON foo dir:${TEST_SCRATCH_DIR}/not-a-dir
+    expect_output --substring "not a directory"
+    test ! -e "$digestfile"
 }
 
 @test "manifest-from-tag" {
