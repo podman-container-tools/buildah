@@ -1,3 +1,5 @@
+//go:build linux || freebsd
+
 package main
 
 import (
