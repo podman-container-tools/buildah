@@ -111,6 +111,99 @@ function check_matrix() {
   assert "$output" == "" "name annotation should be removed"
 }
 
+@test "config --annotation layer:" {
+  # Build a base image with per-layer annotations.
+  local base_image=$(build_oci_image_with_layer_annotations \
+    '"base1": "baseval1",' \
+    '"base2": "baseval2"')
+
+  run_buildah from --quiet $WITH_POLICY_JSON ${base_image}
+  local cid=$output
+
+  # Read the base layer annotations and save them for verification.
+  run_buildah inspect --type=image --format '{{.Manifest}}' ${base_image}
+  local base_annotations=$(jq '[.layers[].annotations]' <<<"$output")
+  local base_layer_count=$(jq '.layers | length' <<<"$output")
+
+  # Set 2 top-layer annotations.
+  run_buildah config \
+    --annotation layer:initial1=initialval1 \
+    --annotation layer:initial2=initialval2 \
+    $cid
+
+  # Verify they are both set.
+  run_buildah inspect --format '{{index .TopLayerAnnotations "initial1"}}' $cid
+  expect_output "initialval1"
+  run_buildah inspect --format '{{index .TopLayerAnnotations "initial2"}}' $cid
+  expect_output "initialval2"
+
+  # Clear all top-layer annotations.
+  run_buildah config --annotation layer:- $cid
+  run_buildah inspect --format '{{.TopLayerAnnotations}}' $cid
+  expect_output "map[]"
+
+  # Add 2 key-value pairs and 2 key-only annotations.
+  run_buildah config \
+    --annotation layer:removekv=removeval \
+    --annotation layer:persistkv=persistval \
+    $cid
+  run_buildah config \
+    --annotation layer:removek \
+    --annotation layer:persistk \
+    $cid
+
+  # Verify all four are set.
+  run_buildah inspect --format '{{index .TopLayerAnnotations "removekv"}}' $cid
+  expect_output "removeval"
+  run_buildah inspect --format '{{index .TopLayerAnnotations "persistkv"}}' $cid
+  expect_output "persistval"
+  run_buildah inspect --format '{{index .TopLayerAnnotations "removek"}}' $cid
+  expect_output ""
+  run_buildah inspect --format '{{index .TopLayerAnnotations "persistk"}}' $cid
+  expect_output ""
+
+  # Unset one key=value and one key-only.
+  run_buildah config \
+    --annotation layer:removekv- \
+    --annotation layer:removek- \
+    $cid
+
+  # Verify remaining annotations and their values.
+  run_buildah inspect --format '{{index .TopLayerAnnotations "persistkv"}}' $cid
+  expect_output "persistval"
+  run_buildah inspect --format '{{index .TopLayerAnnotations "persistk"}}' $cid
+  expect_output ""
+  run_buildah inspect --format '{{.TopLayerAnnotations}}' $cid
+  assert "$output" != *"removekv"* "removekv should be removed"
+  assert "$output" != *"removek"* "removek should be removed"
+
+  # Add content so the new layer is not empty, then commit.
+  run_buildah copy $cid /dev/null /testfile
+  run_buildah commit $WITH_POLICY_JSON $cid committed-layer-annot
+
+  # Verify that base layer annotations are preserved.
+  run_buildah inspect --type=image --format '{{.Manifest}}' committed-layer-annot
+  local committed_manifest="$output"
+
+  for ((i = 0; i < base_layer_count; i++)); do
+    local expected
+    expected=$(jq -c ".[$i]" <<<"$base_annotations")
+    run jq -c ".layers[$i].annotations" <<<"$committed_manifest"
+    assert "$output" = "$expected" \
+      "layer $i annotations should be preserved after commit"
+  done
+
+  # Verify that annotations not removed were committed on the top-most layer.
+  run jq -r '.layers[1].annotations["persistkv"]' <<<"$committed_manifest"
+  assert "$output" = "persistval" "top layer should have persistkv=persistval"
+  run jq -r '.layers[1].annotations["persistk"]' <<<"$committed_manifest"
+  assert "$output" = "" "top layer should have persistk with empty value"
+  run jq '.layers[1].annotations | has("removekv")' <<<"$committed_manifest"
+  assert "$output" = "false" "top layer should not have removekv (removed)"
+  run jq '.layers[1].annotations | has("removek")' <<<"$committed_manifest"
+  assert "$output" = "false" "top layer should not have removek (removed)"
+}
+
 @test "config set empty entrypoint doesn't wipe cmd" {
   run_buildah from $WITH_POLICY_JSON scratch
   cid=$output
