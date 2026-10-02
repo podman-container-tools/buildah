@@ -78,6 +78,7 @@ load helpers
   run_buildah push --digestfile=${TEST_SCRATCH_DIR}/digest.txt $WITH_POLICY_JSON $imageid dir:$mytmpdir
   cat ${TEST_SCRATCH_DIR}/digest.txt
   test -s ${TEST_SCRATCH_DIR}/digest.txt
+  test -z $(tail -c1 ${TEST_SCRATCH_DIR}/digest.txt)
 }
 
 @test "push without destination" {
