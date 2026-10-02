@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/openshift/imagebuilder"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -96,6 +97,30 @@ func TestHistoryEntriesEqual(t *testing.T) {
 			require.Nil(t, err, "error unmarshalling history %q: %v", testCases[i].b, err)
 			equal := historyEntriesEqual(a, b)
 			assert.Equal(t, testCases[i].equal, equal, "historyEntriesEqual(%q, %q) != %v", testCases[i].a, testCases[i].b, testCases[i].equal)
+		})
+	}
+}
+
+func TestQuoteLabelValue(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name, input, expected string
+	}{
+		{name: "plain", input: "value", expected: `"value"`},
+		{name: "dollar", input: "$something", expected: `"\$something"`},
+		{name: "dollarWithExistingBackslash", input: `\$something`, expected: `"\\\$something"`},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			quoted := quoteLabelValue(testCase.input)
+			assert.Equal(t, testCase.expected, quoted)
+			if testCase.name == "dollar" {
+				resolved, err := imagebuilder.ProcessWord(quoted, nil)
+				require.NoError(t, err)
+				assert.Equal(t, testCase.input, resolved)
+			}
 		})
 	}
 }
