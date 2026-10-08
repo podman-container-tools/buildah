@@ -250,29 +250,6 @@ func getURL(ctx context.Context, src string, chown *idtools.IDPair, mountpoint, 
 	return nil
 }
 
-// includeDirectoryAnyway returns true if "path" is a prefix for an exception
-// known to "pm".  If "path" is a directory that "pm" claims matches its list
-// of patterns, but "pm"'s list of exclusions contains a pattern for which
-// "path" is a prefix, then IncludeDirectoryAnyway() will return true.
-// This is not always correct, because it relies on the directory part of any
-// exception paths to be specified without wildcards.
-func includeDirectoryAnyway(path string, pm *fileutils.PatternMatcher) bool {
-	if !pm.Exclusions() {
-		return false
-	}
-	prefix := strings.TrimPrefix(path, string(os.PathSeparator)) + string(os.PathSeparator)
-	for _, pattern := range pm.Patterns() {
-		if !pattern.Exclusion() {
-			continue
-		}
-		spec := strings.TrimPrefix(pattern.String(), string(os.PathSeparator))
-		if strings.HasPrefix(spec, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
 // globbedToGlobbable takes a pathname which might include the '[', *, or ?
 // characters, and converts it into a glob pattern that matches itself by
 // marking the '[' characters as _not_ the beginning of match ranges and
@@ -757,6 +734,8 @@ func (b *Builder) AddContext(ctx context.Context, destination string, extract bo
 			}
 			// Check for dockerignore-style exclusion of this item.
 			if rel != "." {
+				// IsMatch() does more work to return the same result,
+				// it's not worth switching.
 				excluded, err := pm.Matches(filepath.ToSlash(rel)) //nolint:staticcheck
 				if err != nil {
 					return fmt.Errorf("checking if %q(%q) is excluded: %w", globbed, rel, err)
@@ -766,7 +745,7 @@ func (b *Builder) AddContext(ctx context.Context, destination string, extract bo
 					// directories can only be skipped if we don't have to allow for the
 					// possibility of finding things to include under them
 					globInfo := localSourceStat.Results[globbed]
-					if !globInfo.IsDir || !includeDirectoryAnyway(rel, pm) {
+					if !globInfo.IsDir || !pm.ShouldDescendExcludedDir(rel) {
 						continue
 					}
 				} else {
