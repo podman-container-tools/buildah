@@ -11076,3 +11076,20 @@ _EOF
 expect_output --substring "RUN cat /app/testfile.txt
 --> Using cache"
 }
+
+@test "bud multistage copy from failed stage" {
+    _prefetch alpine
+    target=test-failed-stage
+
+    run_buildah 1 build $WITH_POLICY_JSON --jobs=2 -t $target -f - . << _EOF
+FROM alpine AS stage1
+RUN false
+
+FROM alpine AS stage2
+COPY --from=stage1 /etc/alpine-release /tmp/release
+_EOF
+
+    expect_output --substring 'building at STEP "RUN false"'
+    assert "$output" !~ "panic:" "buildah should fail gracefully without a panic"
+}
+
