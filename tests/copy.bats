@@ -882,3 +882,51 @@ stuff/subdir/nested.go"
   run_buildah_umount $cid
   expect_output --from="$filelist" "$expect" "later positive pattern overrides earlier negation"
 }
+
+@test "copy --required-path" {
+  mytest=${TEST_SCRATCH_DIR}/mytest
+  mkdir -p ${mytest}/subdir
+  touch ${mytest}/source.go
+  touch ${mytest}/readme.md
+  touch ${mytest}/subdir/nested.go
+  touch ${mytest}/subdir/nested.md
+
+expect="
+stuff
+stuff/source.go
+stuff/subdir
+stuff/subdir/nested.go"
+
+  run_buildah from $WITH_POLICY_JSON scratch
+  cid=$output
+  run_buildah copy --include="**/*.go" --required-path="subdir/nested.go" $cid ${mytest} /stuff
+  run_buildah_mount $cid
+  mnt=$output
+  run find $mnt -printf "%P\n"
+  filelist=$(LC_ALL=C sort <<<"$output")
+  run_buildah_umount $cid
+  expect_output --from="$filelist" "$expect" "copy required path present among included files"
+
+  # --required-path without --include is rejected
+  run_buildah from $WITH_POLICY_JSON scratch
+  cid=$output
+  run_buildah 125 copy --required-path="source.go" $cid ${mytest} /stuff
+  expect_output -- "Error: --required-path must be used with --include" "copy required-path without include"
+
+  # multiple required paths, all satisfied
+  run_buildah from $WITH_POLICY_JSON scratch
+  cid=$output
+  run_buildah copy --include="**/*.go" --required-path="source.go" --required-path="subdir/nested.go" $cid ${mytest} /stuff
+  run_buildah_mount $cid
+  mnt=$output
+  run find $mnt -printf "%P\n"
+  filelist=$(LC_ALL=C sort <<<"$output")
+  run_buildah_umount $cid
+  expect_output --from="$filelist" "$expect" "copy multiple required paths all present"
+
+  # multiple required paths, one missing from the included set
+  run_buildah from $WITH_POLICY_JSON scratch
+  cid=$output
+  run_buildah 125 copy --include="**/*.go" --required-path="source.go" --required-path="readme.md" $cid ${mytest} /stuff
+  expect_output --substring "required path \"readme.md\" was not copied" "copy one of multiple required paths missing"
+}

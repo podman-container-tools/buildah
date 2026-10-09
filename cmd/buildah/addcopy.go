@@ -50,6 +50,7 @@ type addCopyResults struct {
 	noFollowSymlinks   bool
 	keepGitDir         bool
 	includes           []string
+	requiredPaths      []string
 }
 
 func createCommand(addCopy string, desc string, short string, opts *addCopyResults) *cobra.Command {
@@ -117,6 +118,7 @@ func applyFlagVars(flags *pflag.FlagSet, opts *addCopyResults) {
 	flags.BoolVar(&opts.allowWildcard, "allow-wildcard", true, "allow glob patterns in source paths")
 	flags.BoolVar(&opts.allowEmptyWildcard, "allow-empty-wildcard", false, "don't error when glob patterns match nothing")
 	flags.StringSliceVar(&opts.includes, "include", nil, "include pattern when copying files")
+	flags.StringSliceVar(&opts.requiredPaths, "required-path", nil, "required paths when copying files, must be used with --include")
 }
 
 func addcopyInit() {
@@ -290,6 +292,10 @@ func addAndCopyCmd(c *cobra.Command, args []string, verb string, iopts addCopyRe
 		followSymlink = types.OptionalBoolFalse
 	}
 
+	if len(iopts.requiredPaths) > 0 && len(iopts.includes) == 0 {
+		return fmt.Errorf("--required-path must be used with --include")
+	}
+
 	options := buildah.AddAndCopyOptions{
 		Chmod:             iopts.chmod,
 		Chown:             iopts.chown,
@@ -310,6 +316,7 @@ func addAndCopyCmd(c *cobra.Command, args []string, verb string, iopts addCopyRe
 		KeepGitDir:            iopts.keepGitDir,
 		Proxy:                 http.ProxyFromEnvironment,
 		Includes:              iopts.includes,
+		RequiredPaths:         iopts.requiredPaths,
 	}
 	if iopts.contextdir != "" {
 		var excludes []string
