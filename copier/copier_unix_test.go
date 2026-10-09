@@ -253,3 +253,13 @@ func TestSymlinkChroot(t *testing.T) {
 	testSymlink(t)
 	canChroot = couldChroot
 }
+
+func TestAttemptUnpackDockerCompatibilityChroot(t *testing.T) {
+	if uid != 0 {
+		t.Skip("chroot() requires root privileges, skipping")
+	}
+	couldChroot := canChroot
+	canChroot = true
+	testAttemptUnpackDockerCompatibility(t)
+	canChroot = couldChroot
+}
