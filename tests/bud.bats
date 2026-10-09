@@ -3006,6 +3006,29 @@ _EOF
   run_buildah build --label test $WITH_POLICY_JSON -t ${target} $BUDFILES/from-scratch
   run_buildah inspect --format '{{printf "%q" .Docker.Config.Labels}}' ${target}
   expect_output "$want_output"
+
+  want_output='map["io.buildah.version":"'$buildah_version'" "test":"$something"]'
+  run_buildah build --label 'test=$something' $WITH_POLICY_JSON -t ${target} $BUDFILES/from-scratch
+  run_buildah inspect --format '{{printf "%q" .Docker.Config.Labels}}' ${target}
+  expect_output "$want_output"
+}
+
+@test "bud-label-expands-variables-set-in-stage" {
+  run_buildah --version
+  local -a output_fields=($output)
+  buildah_version=${output_fields[2]}
+
+  local contextdir=${TEST_SCRATCH_DIR}/context
+  mkdir -p ${contextdir}
+  cat > ${contextdir}/Containerfile << _EOF
+FROM scratch
+ENV VERSION=1.2
+_EOF
+
+  want_output='map["both":"1.2-$UNSET" "io.buildah.version":"'$buildah_version'" "other":"$UNSET" "release":"1.2"]'
+  run_buildah build --label 'release=$VERSION' --label 'other=$UNSET' --label 'both=$VERSION-$UNSET' $WITH_POLICY_JSON -t scratch-image ${contextdir}
+  run_buildah inspect --format '{{printf "%q" .Docker.Config.Labels}}' scratch-image
+  expect_output "$want_output"
 }
 
 @test "bud-with-identity-label" {
