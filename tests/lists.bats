@@ -445,23 +445,43 @@ IMAGE_LIST_S390X_INSTANCE_DIGEST=sha256:fc5aae77765f7f26f729bad7bfb3cef1bf4e9260
 
 @test "manifest-skip-some-base-images-with-all-platforms" {
     start_registry
-    run_buildah manifest create localhost:"${REGISTRY_PORT}"/base
-    run_buildah manifest add --all localhost:"${REGISTRY_PORT}"/base ${IMAGE_LIST}
+    local reg=localhost:"${REGISTRY_PORT}"
+    local repo=quay.io/libpod/k8s-pause
+    local registry_opts="--cert-dir=${REGISTRY_DIR} --tls-verify=false --creds testuser:testpassword"
+    # Mirror each platform into the test registry so manifest push does not
+    # re-fetch from quay.io (CI often hits rate limits there).
+    for entry in \
+        amd64/${IMAGE_LIST_AMD64_INSTANCE_DIGEST} \
+        arm/${IMAGE_LIST_ARM_INSTANCE_DIGEST} \
+        arm64/${IMAGE_LIST_ARM64_INSTANCE_DIGEST} \
+        ppc64le/${IMAGE_LIST_PPC64LE_INSTANCE_DIGEST} \
+        s390x/${IMAGE_LIST_S390X_INSTANCE_DIGEST}
+    do
+        local tag=${entry%%/*}
+        local d=${entry#*/}
+        _prefetch "${repo}@${d}"
+        run_buildah push ${registry_opts} "${repo}@${d}" "${reg}/k8s-pause:${tag}"
+        run_buildah pull ${registry_opts} "${reg}/k8s-pause:${tag}"
+    done
+    run_buildah manifest create "${reg}/base"
+    for tag in amd64 arm arm64 ppc64le s390x; do
+        run_buildah manifest add "${reg}/base" "${reg}/k8s-pause:${tag}"
+    done
     # get a count of how many "real" base images there are
-    run_buildah manifest inspect localhost:"${REGISTRY_PORT}"/base
+    run_buildah manifest inspect "${reg}/base"
     nbaseplatforms=$(grep '"platform"' <<< "$output" | wc -l)
     echo $nbaseplatforms base platforms
     # add some trash that we expect to skip in a --all-platforms build
-    run_buildah build --manifest localhost:"${REGISTRY_PORT}"/base --platform unknown/unknown --no-cache -f $BUDFILES/from-scratch/Containerfile2 $BUDFILES/from-scratch
-    run_buildah build --manifest localhost:"${REGISTRY_PORT}"/base --platform linux/unknown --no-cache -f $BUDFILES/from-scratch/Containerfile2 $BUDFILES/from-scratch
-    run_buildah build --manifest localhost:"${REGISTRY_PORT}"/base --platform unknown/amd64p32 --no-cache -f $BUDFILES/from-scratch/Containerfile2 $BUDFILES/from-scratch
+    run_buildah build --manifest "${reg}/base" --platform unknown/unknown --no-cache -f $BUDFILES/from-scratch/Containerfile2 $BUDFILES/from-scratch
+    run_buildah build --manifest "${reg}/base" --platform linux/unknown --no-cache -f $BUDFILES/from-scratch/Containerfile2 $BUDFILES/from-scratch
+    run_buildah build --manifest "${reg}/base" --platform unknown/amd64p32 --no-cache -f $BUDFILES/from-scratch/Containerfile2 $BUDFILES/from-scratch
     # add a known combination of OS/arch that we can be pretty sure wasn't already there
-    run_buildah build --manifest localhost:"${REGISTRY_PORT}"/base --platform linux/amd64p32 --no-cache -f $BUDFILES/from-scratch/Containerfile2 $BUDFILES/from-scratch
+    run_buildah build --manifest "${reg}/base" --platform linux/amd64p32 --no-cache -f $BUDFILES/from-scratch/Containerfile2 $BUDFILES/from-scratch
     # push the list to the local registry and clean up our local copy
-    run_buildah manifest push --tls-verify=false --creds testuser:testpassword --all localhost:"${REGISTRY_PORT}"/base
-    run_buildah rmi localhost:"${REGISTRY_PORT}"/base
+    run_buildah manifest push ${registry_opts} --all "${reg}/base"
+    run_buildah manifest rm "${reg}/base"
     # build a new list based on the valid base images in the list we just pushed
-    run_buildah build --tls-verify=false --creds testuser:testpassword --manifest derived --all-platforms --from localhost:"${REGISTRY_PORT}"/base $BUDFILES/from-base
+    run_buildah build ${registry_opts} --manifest derived --all-platforms --from "${reg}/base" $BUDFILES/from-base
     run_buildah manifest inspect derived
     nderivedplatforms=$(grep '"platform"' <<< "$output" | wc -l)
     echo $nderivedplatforms derived platforms
