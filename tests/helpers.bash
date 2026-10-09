@@ -595,7 +595,7 @@ function expect_output() {
     # option processing: recognize --from="...", --substring
     local opt
     for opt; do
-        local value=$(expr "$opt" : '[^=]*=\(.*\)')
+        local value=$(expr -- "$opt" : '[^=]*=\(.*\)')
         case "$opt" in
             --from=*)       actual="$value";   shift;;
             --substring)    operator='=~';     shift;;

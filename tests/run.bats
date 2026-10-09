@@ -695,7 +695,6 @@ function configure_and_check_user() {
 }
 
 @test "Verify /run/.containerenv exist" {
-        skip_if_rootless_environment
 	skip_if_no_runtime
 
 	_prefetch alpine
@@ -715,7 +714,7 @@ function configure_and_check_user() {
 	expect_output --substring "alpine:latest"
 
 	rootless=0
-	if ["$(id -u)" -ne 0 ]; then
+	if [ "$(id -u)" -ne 0 ]; then
 		rootless=1
 	fi
 
