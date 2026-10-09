@@ -897,6 +897,9 @@ func (e *ClientExecutor) Copy(excludes []string, copies ...imagebuilder.Copy) er
 		if copy.KeepGitDir {
 			return fmt.Errorf("ADD --keep-git-dir not supported")
 		}
+		if copy.Unpack != nil {
+			return fmt.Errorf("ADD --unpack not supported")
+		}
 		if len(copy.Excludes) > 0 {
 			return fmt.Errorf("ADD or COPY --exclude not supported")
 		}

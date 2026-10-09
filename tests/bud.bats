@@ -4379,7 +4379,7 @@ _EOF
   imgName=alpine-image
   ctrName=alpine-chown
   run_buildah 125 build $WITH_POLICY_JSON --layers -t ${imgName} -f $BUDFILES/add-chown/Dockerfile.bad $BUDFILES/add-chown
-  expect_output --substring "ADD only supports the --chmod=<permissions>, --chown=<uid:gid>, --checksum=<checksum>, and --exclude=<pattern> flags"
+  expect_output --substring "ADD only supports the --chmod=<permissions>, --chown=<uid:gid>, --checksum=<checksum>, --exclude=<pattern>, and --unpack=<bool> flags"
 }
 
 @test "bud with chmod add with bad chmod flag in Dockerfile with --layers" {
@@ -4387,7 +4387,7 @@ _EOF
   imgName=alpine-image
   ctrName=alpine-chmod
   run_buildah 125 build $WITH_POLICY_JSON --layers -t ${imgName} -f $BUDFILES/add-chmod/Dockerfile.bad $BUDFILES/add-chmod
-  expect_output --substring "ADD only supports the --chmod=<permissions>, --chown=<uid:gid>, --checksum=<checksum>, and --exclude=<pattern> flags"
+  expect_output --substring "ADD only supports the --chmod=<permissions>, --chown=<uid:gid>, --checksum=<checksum>, --exclude=<pattern>, and --unpack=<bool> flags"
 }
 
 @test "bud with ADD with checksum flag" {
@@ -4410,7 +4410,7 @@ _EOF
   _prefetch alpine
   target=alpine-image
   run_buildah 125 build $WITH_POLICY_JSON -t ${target} -f $BUDFILES/add-checksum/Containerfile.bad $BUDFILES/add-checksum
-  expect_output --substring "ADD only supports the --chmod=<permissions>, --chown=<uid:gid>, --checksum=<checksum>, and --exclude=<pattern> flags"
+  expect_output --substring "ADD only supports the --chmod=<permissions>, --chown=<uid:gid>, --checksum=<checksum>, --exclude=<pattern>, and --unpack=<bool> flags"
 }
 
 @test "bud with ADD file construct" {
@@ -11075,4 +11075,140 @@ _EOF
 --> Using cache"
 expect_output --substring "RUN cat /app/testfile.txt
 --> Using cache"
+}
+
+@test "bud with ADD --unpack=true extracts remote archive" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/add-unpack-remote
+  mkdir -p $contextdir
+
+  # Set up HTTP server with tarball
+  local contentdir=${TEST_SCRATCH_DIR}/add-unpack-content
+  mkdir -p $contentdir
+  cp $BUDFILES/symlink/tarball.tar.gz $contentdir/archive.tar.gz
+  starthttpd $contentdir
+
+  cat > $contextdir/Dockerfile << _EOF
+FROM alpine
+ADD --unpack=true http://0.0.0.0:${HTTP_SERVER_PORT}/archive.tar.gz /tmp/
+RUN test -f /tmp/testdir/testfile.txt
+RUN test ! -f /tmp/archive.tar.gz
+_EOF
+
+  run_buildah build --network=none $WITH_POLICY_JSON -t test-unpack-remote $contextdir
+}
+
+@test "bud with ADD remote archive default not extracted" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/add-remote-default
+  mkdir -p $contextdir
+
+  # Set up HTTP server with tarball
+  local contentdir=${TEST_SCRATCH_DIR}/add-remote-content
+  mkdir -p $contentdir
+  cp $BUDFILES/symlink/tarball.tar.gz $contentdir/archive.tar.gz
+  starthttpd $contentdir
+
+  cat > $contextdir/Dockerfile << _EOF
+FROM alpine
+ADD http://0.0.0.0:${HTTP_SERVER_PORT}/archive.tar.gz /tmp/
+RUN test -f /tmp/archive.tar.gz
+RUN test ! -f /tmp/testdir/testfile.txt
+_EOF
+
+  run_buildah build --network=none $WITH_POLICY_JSON -t test-remote-default $contextdir
+}
+
+@test "bud with ADD --unpack=false does not extract local archive" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/add-unpack-false
+  mkdir -p $contextdir
+  cp $BUDFILES/symlink/tarball.tar.gz $contextdir/archive.tar.gz
+
+  cat > $contextdir/Dockerfile << _EOF
+FROM alpine
+ADD --unpack=false archive.tar.gz /tmp/
+RUN test -f /tmp/archive.tar.gz
+RUN test ! -f /tmp/testdir/testfile.txt
+_EOF
+
+  run_buildah build --network=none $WITH_POLICY_JSON -t test-unpack-false $contextdir
+}
+
+@test "bud with COPY --unpack rejects flag" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/copy-unpack-reject
+  mkdir -p $contextdir
+  echo "test" > $contextdir/testfile
+
+  cat > $contextdir/Dockerfile << _EOF
+FROM alpine
+COPY --unpack=true testfile /tmp/
+_EOF
+
+  run_buildah 125 build $WITH_POLICY_JSON -t test-copy-unpack $contextdir
+  expect_output --substring "COPY only supports the --chmod=<permissions>, --chown=<uid:gid>, --from=<image|stage>, --link, --parents, and --exclude=<pattern> flags"
+}
+
+@test "bud with ADD --unpack=true for remote non-archive file" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/add-unpack-nonarchive
+  mkdir -p $contextdir
+
+  # Set up HTTP server with a plain text file
+  local contentdir=${TEST_SCRATCH_DIR}/add-unpack-text
+  mkdir -p $contentdir
+  echo "test content" > $contentdir/testfile.txt
+  starthttpd $contentdir
+
+  cat > $contextdir/Dockerfile << _EOF
+FROM alpine
+ADD --unpack=true http://0.0.0.0:${HTTP_SERVER_PORT}/testfile.txt /tmp/
+RUN test -f /tmp/testfile.txt
+RUN grep "test content" /tmp/testfile.txt
+_EOF
+
+  run_buildah build --network=none $WITH_POLICY_JSON -t test-unpack-nonarchive $contextdir
+}
+
+@test "bud with ADD --unpack=true for remote non-archive to file destination" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/add-unpack-file-dest
+  mkdir -p $contextdir
+
+  # Set up HTTP server with a plain text file
+  local contentdir=${TEST_SCRATCH_DIR}/add-unpack-text2
+  mkdir -p $contentdir
+  echo "file content" > $contentdir/source.txt
+  starthttpd $contentdir
+
+  cat > $contextdir/Dockerfile << _EOF
+FROM alpine
+ADD --unpack=true http://0.0.0.0:${HTTP_SERVER_PORT}/source.txt /tmp/targetfile
+RUN test -f /tmp/targetfile
+RUN grep "file content" /tmp/targetfile
+_EOF
+
+  run_buildah build --network=none $WITH_POLICY_JSON -t test-unpack-file-dest $contextdir
+}
+
+@test "bud with ADD --unpack=true remote archive no trailing slash" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/add-unpack-no-slash
+  mkdir -p $contextdir
+
+  # Set up HTTP server with tarball
+  local contentdir=${TEST_SCRATCH_DIR}/add-unpack-tar2
+  mkdir -p $contentdir
+  cp $BUDFILES/symlink/tarball.tar.gz $contentdir/archive.tar.gz
+  starthttpd $contentdir
+
+  cat > $contextdir/Dockerfile << _EOF
+FROM alpine
+ADD --unpack=true http://0.0.0.0:${HTTP_SERVER_PORT}/archive.tar.gz /tmp
+RUN test -f /tmp/testdir/testfile.txt
+RUN test ! -f /tmp/archive.tar.gz
+_EOF
+
+  run_buildah build --network=none $WITH_POLICY_JSON -t test-unpack-no-slash $contextdir
 }

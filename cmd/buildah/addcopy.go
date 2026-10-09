@@ -50,6 +50,7 @@ type addCopyResults struct {
 	noFollowSymlinks   bool
 	keepGitDir         bool
 	includes           []string
+	unpack             bool
 }
 
 func createCommand(addCopy string, desc string, short string, opts *addCopyResults) *cobra.Command {
@@ -137,6 +138,7 @@ func addcopyInit() {
 	addFlags := addCommand.Flags()
 	applyFlagVars(addFlags, &addOpts)
 	addFlags.BoolVar(&addOpts.keepGitDir, "keep-git-dir", false, "keep the .git directory when adding a git repository source")
+	addFlags.BoolVar(&addOpts.unpack, "unpack", false, "extracts archive content; local archives are extracted by default while remote are not")
 
 	copyFlags := copyCommand.Flags()
 	applyFlagVars(copyFlags, &copyOpts)
@@ -325,6 +327,9 @@ func addAndCopyCmd(c *cobra.Command, args []string, verb string, iopts addCopyRe
 	}
 	if c.Flags().Changed("allow-empty-wildcard") {
 		options.AllowEmptyWildcard = types.NewOptionalBool(iopts.allowEmptyWildcard)
+	}
+	if c.Flags().Changed("unpack") {
+		options.Unpack = types.NewOptionalBool(iopts.unpack)
 	}
 	if iopts.retryDelay != "" {
 		retryDelay, err := time.ParseDuration(iopts.retryDelay)

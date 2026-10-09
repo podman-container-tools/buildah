@@ -131,9 +131,9 @@ func extendedGlob(pattern string) (matches []string, err error) {
 	return matches, nil
 }
 
-// isArchivePath returns true if the specified path can be read like a (possibly
+// IsArchivePath returns true if the specified path can be read like a (possibly
 // compressed) tarball.
-func isArchivePath(path string) bool {
+func IsArchivePath(path string) bool {
 	f, err := os.Open(path)
 	if err != nil {
 		return false
@@ -1462,7 +1462,7 @@ func copierHandlerStat(ctx context.Context, req request, pmExcludes *fileutils.P
 				}
 				// replace IsArchive/IsDir/IsRegular with info about the target
 				if info.Mode().IsRegular() && req.StatOptions.CheckForArchives {
-					result.IsArchive = isArchivePath(resolvedTarget)
+					result.IsArchive = IsArchivePath(resolvedTarget)
 					checkForArchive = false
 				}
 				result.IsDir = info.IsDir()
@@ -1472,7 +1472,7 @@ func copierHandlerStat(ctx context.Context, req request, pmExcludes *fileutils.P
 				// we were asked to check on this, and it
 				// wasn't a symlink, in which case we'd have
 				// already checked what the link points to
-				result.IsArchive = isArchivePath(globbed)
+				result.IsArchive = IsArchivePath(globbed)
 			}
 		}
 		if len(s.Globbed) == 0 {
@@ -2007,7 +2007,7 @@ func copierHandlerGetOne(ctx context.Context, srcfi os.FileInfo, symlinkTarget, 
 		// file and spool out its contents in-line.  (if we just
 		// inlined the whole file, we'd also be inlining the EOF marker
 		// it contains)
-		if options.ExpandArchives && isArchivePath(contentPath) {
+		if options.ExpandArchives && IsArchivePath(contentPath) {
 			content, err := os.Open(contentPath)
 			if err != nil {
 				return fmt.Errorf("opening file for reading archive contents: %w", err)

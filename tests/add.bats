@@ -582,6 +582,65 @@ EOF
   expect_output --substring "no such file or directory"
 }
 
+@test "add-unpack-false-local-archive" {
+  run_buildah from $WITH_POLICY_JSON scratch
+  cid=$output
+  run_buildah config --workingdir / $cid
+
+  mkdir ${TEST_SCRATCH_DIR}/archive-content
+  createrandom ${TEST_SCRATCH_DIR}/archive-content/file1
+  tar -c -C ${TEST_SCRATCH_DIR} -z -f ${TEST_SCRATCH_DIR}/archive.tar.gz archive-content
+
+  # Default: local archives are extracted.
+  run_buildah add $cid ${TEST_SCRATCH_DIR}/archive.tar.gz /dest1/
+  run_buildah_mount $cid
+  root=$output
+  test -f $root/dest1/archive-content/file1
+  run_buildah_umount $cid
+
+  # --unpack=false: copy the archive as-is instead of extracting it.
+  run_buildah add --unpack=false $cid ${TEST_SCRATCH_DIR}/archive.tar.gz /dest2/
+  run_buildah_mount $cid
+  root=$output
+  test -f $root/dest2/archive.tar.gz
+  test ! -d $root/dest2/archive-content
+  run_buildah_umount $cid
+}
+
+@test "add-unpack-true-remote-archive" {
+  run_buildah from $WITH_POLICY_JSON scratch
+  cid=$output
+  run_buildah config --workingdir / $cid
+
+  mkdir ${TEST_SCRATCH_DIR}/archive-content
+  createrandom ${TEST_SCRATCH_DIR}/archive-content/file1
+  tar -c -C ${TEST_SCRATCH_DIR} -z -f ${TEST_SCRATCH_DIR}/archive.tar.gz archive-content
+  starthttpd ${TEST_SCRATCH_DIR}
+
+  # Default: remote archives are not extracted.
+  run_buildah add $cid http://0.0.0.0:${HTTP_SERVER_PORT}/archive.tar.gz /dest1/
+  run_buildah_mount $cid
+  root=$output
+  test -f $root/dest1/archive.tar.gz
+  run_buildah_umount $cid
+
+  # --unpack=true: extract the downloaded archive.
+  run_buildah add --unpack=true $cid http://0.0.0.0:${HTTP_SERVER_PORT}/archive.tar.gz /dest2/
+  run_buildah_mount $cid
+  root=$output
+  test -f $root/dest2/archive-content/file1
+  test ! -f $root/dest2/archive.tar.gz
+  run_buildah_umount $cid
+}
+
+@test "add-unpack-invalid-value" {
+  run_buildah from $WITH_POLICY_JSON scratch
+  cid=$output
+
+  run_buildah 125 add --unpack=something $cid ${TEST_SCRATCH_DIR}/nonexistent /dest/
+  expect_output --substring "invalid argument \"something\" for "
+}
+
 @test "add-symlink-root-follow-default" {
   createrandom ${TEST_SCRATCH_DIR}/file
   ln -s ./file ${TEST_SCRATCH_DIR}/symlink

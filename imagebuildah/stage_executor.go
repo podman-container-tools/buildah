@@ -650,6 +650,10 @@ func (s *stageExecutor) performCopy(excludes []string, copies ...imagebuilder.Co
 			options.IgnoreFile = ""
 		}
 
+		if copy.Unpack != nil {
+			options.Unpack = types.NewOptionalBool(*copy.Unpack)
+		}
+
 		if len(nonGitSources) > 0 {
 			if err := s.builder.AddContext(s.ctx, copy.Dest, copy.Download, options, nonGitSources...); err != nil {
 				return err
@@ -1565,7 +1569,7 @@ func (s *stageExecutor) execute(ctx context.Context, base string) (imgID string,
 				return "", nil, false, fmt.Errorf("COPY only supports the --chmod=<permissions>, --chown=<uid:gid>, --from=<image|stage>, and --exclude=<pattern> flags")
 			}
 			if step.Command == command.Add && (flag == "--chmod" || flag == "--chown" || flag == "--checksum" || flag == "--exclude") {
-				return "", nil, false, fmt.Errorf("ADD only supports the --chmod=<permissions>, --chown=<uid:gid>, --checksum=<checksum>, and --exclude=<pattern> flags")
+				return "", nil, false, fmt.Errorf("ADD only supports the --chmod=<permissions>, --chown=<uid:gid>, --checksum=<checksum>, --exclude=<pattern>, and --unpack=<bool> flags")
 			}
 			if strings.Contains(flag, "--from") && step.Command == command.Copy {
 				arr := strings.Split(flag, "=")
