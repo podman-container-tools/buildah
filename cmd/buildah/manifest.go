@@ -112,7 +112,7 @@ func manifestInit() {
 	flags.BoolVar(&manifestCreateOpts.all, "all", false, "add all of the lists' images if the images to add are lists")
 	flags.BoolVar(&manifestCreateOpts.amend, "amend", false, "modify an existing list if one with the desired name already exists")
 	flags.BoolVar(&manifestCreateOpts.replace, "replace", false, "replace an existing image with the desired name")
-	flags.StringSliceVar(&manifestCreateOpts.annotations, "annotation", nil, "set an `annotation` for the image index")
+	flags.StringArrayVar(&manifestCreateOpts.annotations, "annotation", nil, "set an `annotation` for the image index")
 	flags.StringVar(&manifestCreateOpts.os, "os", "", "if any of the specified images is a list, choose the one for `os`")
 	if err := flags.MarkHidden("os"); err != nil {
 		panic(fmt.Sprintf("error marking --os as hidden: %v", err))
@@ -214,7 +214,7 @@ func manifestInit() {
 	flags.StringVar(&manifestAnnotateOpts.osVersion, "os-version", "", "override the os `version` of the specified image")
 	flags.StringSliceVar(&manifestAnnotateOpts.features, "features", nil, "override the `features` of the specified image")
 	flags.StringSliceVar(&manifestAnnotateOpts.osFeatures, "os-features", nil, "override the os `features` of the specified image")
-	flags.StringSliceVar(&manifestAnnotateOpts.annotations, "annotation", nil, "set an `annotation` for the specified image")
+	flags.StringArrayVar(&manifestAnnotateOpts.annotations, "annotation", nil, "set an `annotation` for the specified image")
 	flags.StringVar(&manifestAnnotateOpts.subject, "subject", "", "set a subject for the image index")
 	manifestAnnotateCommand.SetUsageTemplate(UsageTemplate())
 	manifestCommand.AddCommand(manifestAnnotateCommand)
