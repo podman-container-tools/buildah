@@ -56,6 +56,18 @@ fi
 if [[ "$DISTRO_NAME" == "fedora-rawhide" ]]; then
     export TEST_BUILD_TAGS="${TEST_BUILD_TAGS:-containers_image_sequoia}"
 fi
+
+# block all outgoing traffic except what stays on localhost
+sudo nft -f - <<EOF
+table inet block {
+	chain output {
+		type filter hook output priority filter; policy drop;
+		oifname "lo" accept
+        ct state established,related accept
+	}
+}
+EOF
+
 echo "::endgroup::" # System setup
 
 echo "::group::Logging system info"
