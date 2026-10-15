@@ -11096,3 +11096,89 @@ _EOF
   expect_output --substring "image not known"
   assert "$output" !~ "panic:"
 }
+
+@test "bud multi-stage build preserves architecture of local external images" {
+  # This tests that stages without a --platform flag are NOT aggressively
+  # reset to the host architecture. It ensures Buildah does not strict-match
+  # and crash when trying to resolve local images of a foreign architecture.
+
+  run_buildah info --format '{{.host.arch}}'
+  host_arch="$output"
+  
+  # Select a foreign test architecture + variant
+  test_arch="arm"
+  test_variant="v7"
+  if [[ "$host_arch" == "arm" ]]; then
+    test_arch="arm64"
+    test_variant="v8"
+  fi
+
+  local contextdir="${TEST_SCRATCH_DIR}/multi-stage-variant"
+  mkdir -p "$contextdir"
+
+  # 1. Build an external local image with a foreign architecture
+  cat > "$contextdir/Dockerfile.base" << EOF
+FROM busybox
+ENV STAGE=base
+EOF
+  run_buildah build $WITH_POLICY_JSON --platform=linux/${test_arch}/${test_variant} -t local-cross-builder -f "$contextdir/Dockerfile.base" "$contextdir"
+
+  # 2. Main Dockerfile
+  cat > "$contextdir/Dockerfile" << EOF
+ARG BASE=local-cross-builder
+
+# Stage 1: Exists purely to test multi-stage behavior with local
+FROM alpine AS stage1
+
+# Stage 2: Uses the local foreign image without a --platform flag.
+# This should leave the context empty and successfully accept the local foreign image.
+FROM \${BASE} AS final
+ENV STAGE=final
+EOF
+
+  # 3. Build the multi-stage image.
+  run_buildah build $WITH_POLICY_JSON --target final -t test-final "$contextdir"
+
+  # 4. Verify the final image successfully retained the exact foreign architecture and variant.
+  run_buildah inspect --format '{{.OCIv1.Architecture}}' test-final
+  expect_output "${test_arch}"
+}
+
+@test "bud multi-stage build does not re-pull and overwrite local image" {
+  _prefetch alpine
+  start_registry
+  local authfile="${TEST_SCRATCH_DIR}/test.auth"
+  run_buildah login --tls-verify=false --authfile "$authfile" --username testuser --password testpassword "localhost:${REGISTRY_PORT}"
+
+  local registry="localhost:${REGISTRY_PORT}"
+  local contextdir="${TEST_SCRATCH_DIR}/re-pull-local"
+  mkdir -p "$contextdir"
+
+  # Build an image without the test file and push it to the registry
+  cat > "$contextdir/Dockerfile.remote" << _EOF
+FROM alpine
+RUN echo "remote-version" > /version.txt
+_EOF
+  run_buildah build $WITH_POLICY_JSON -t "${registry}/local-override:latest" -f "$contextdir/Dockerfile.remote" "$contextdir"
+  run_buildah push --authfile "$authfile" --tls-verify=false "${registry}/local-override:latest" "docker://${registry}/local-override:latest"
+
+  # Modify and rebuild the image locally with a local-only file (do not push!)
+  cat > "$contextdir/Dockerfile.local" << _EOF
+FROM alpine
+RUN echo "local-version" > /version.txt
+RUN echo "local-only" > /local-file.txt
+_EOF
+  run_buildah build $WITH_POLICY_JSON -t "${registry}/local-override:latest" -f "$contextdir/Dockerfile.local" "$contextdir"
+
+  # Multi-stage build that references the local image in stage 1
+  cat > "$contextdir/Dockerfile.multistage" << _EOF
+FROM ${registry}/local-override:latest AS stage1
+FROM alpine
+COPY --from=stage1 /local-file.txt /local-file.txt
+RUN cat /local-file.txt
+_EOF
+
+  # Build must succeed using the local image without re-pulling from the registry
+  run_buildah build --authfile "$authfile" --tls-verify=false -f "$contextdir/Dockerfile.multistage" "$contextdir"
+  expect_output --substring "local-only"
+}
