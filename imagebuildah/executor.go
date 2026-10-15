@@ -591,6 +591,55 @@ func (b *executor) getImageTypeAndHistoryAndDiffIDs(ctx context.Context, imageID
 	return oci.OS, oci.Architecture, manifestFormat, oci.History, oci.RootFS.DiffIDs, nil
 }
 
+// labelInstruction builds the LABEL instruction used to apply --label values.
+// References to variables that are set in env are expanded when the instruction
+// is processed, and references to any other variables are kept literally.
+func labelInstruction(labels, env []string) string {
+	var labelLine strings.Builder
+	labelLine.WriteString("LABEL")
+	for _, labelSpec := range labels {
+		key, value, _ := strings.Cut(labelSpec, "=")
+		// check only for an empty key since docker allows empty values
+		if key != "" {
+			fmt.Fprintf(&labelLine, " %q=%s", key, quoteLabelValue(value, env))
+		}
+	}
+	return labelLine.String()
+}
+
+func quoteLabelValue(value string, env []string) string {
+	quoted := fmt.Sprintf("%q", value)
+	var escaped strings.Builder
+	for i := 0; i < len(quoted); i++ {
+		if quoted[i] == '$' && !referencesSetVariable(quoted[i+1:], env) {
+			escaped.WriteByte('\\')
+		}
+		escaped.WriteByte(quoted[i])
+	}
+	return escaped.String()
+}
+
+// referencesSetVariable checks if the text following a "$" names a variable in env.
+func referencesSetVariable(text string, env []string) bool {
+	braced := strings.HasPrefix(text, "{")
+	text = strings.TrimPrefix(text, "{")
+	nameLen := 0
+	for nameLen < len(text) && (text[nameLen] == '_' || text[nameLen] >= '0' && text[nameLen] <= '9' || text[nameLen]|0x20 >= 'a' && text[nameLen]|0x20 <= 'z') {
+		nameLen++
+	}
+	if nameLen == 0 {
+		return false
+	}
+	if braced && !strings.HasPrefix(text[nameLen:], "}") {
+		// ${VAR:-default} and similar: leave it to the word expander
+		return true
+	}
+	return slices.ContainsFunc(env, func(setting string) bool {
+		name, _, _ := strings.Cut(setting, "=")
+		return name == text[:nameLen]
+	})
+}
+
 func (b *executor) buildStage(ctx context.Context, cleanupStages map[int]*stageExecutor, stages imagebuilder.Stages, stageIndex int, afterDependency map[int]int) (imageID string, commitResults *buildah.CommitResults, onlyBaseImage bool, err error) {
 	select {
 	case <-ctx.Done():
@@ -629,16 +678,10 @@ func (b *executor) buildStage(ctx context.Context, cleanupStages map[int]*stageE
 		// processed like regular steps, and if no modification is done to
 		// layers, its easier to reuse cached layers.
 		if len(b.labels) > 0 {
-			var labelLine strings.Builder
-			labelLine.WriteString("LABEL")
-			for _, labelSpec := range b.labels {
-				key, value, _ := strings.Cut(labelSpec, "=")
-				// check only for an empty key since docker allows empty values
-				if key != "" {
-					fmt.Fprintf(&labelLine, " %q=%q", key, value)
-				}
-			}
-			appendInstructions = slices.Concat(appendInstructions, []string{labelLine.String()})
+			// Variables set in the stage aren't known yet, so keep every
+			// "$" literal here; the stage executor expands the ones that
+			// turn out to be set when it gets to this instruction.
+			appendInstructions = slices.Concat(appendInstructions, []string{labelInstruction(b.labels, nil)})
 		}
 	}
 

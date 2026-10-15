@@ -1532,6 +1532,15 @@ func (s *stageExecutor) execute(ctx context.Context, base string) (imgID string,
 		s.isLastStep = lastStage && lastInstruction
 		// Resolve any arguments in this instruction.
 		step := ib.Step()
+		if lastStage && lastInstruction && len(s.executor.labels) > 0 && node.Original == labelInstruction(s.executor.labels, nil) {
+			// This is the instruction that applies --label values.
+			// Expand references to variables that are set in this stage.
+			labelNodes, err := imagebuilder.ParseDockerfile(strings.NewReader(labelInstruction(s.executor.labels, step.Env)))
+			if err != nil {
+				return "", nil, false, fmt.Errorf("parsing label instruction: %w", err)
+			}
+			node = labelNodes.Children[0]
+		}
 		if err := step.Resolve(node); err != nil {
 			return "", nil, false, fmt.Errorf("resolving step %+v: %w", *node, err)
 		}
