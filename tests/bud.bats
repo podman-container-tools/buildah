@@ -11073,7 +11073,7 @@ _EOF
     run_buildah build --layers $WITH_POLICY_JSON -t link-from-rel2 $contextdir
     expect_output --substring "COPY --from=builder --link /src/testfile.txt ./
 --> Using cache"
-expect_output --substring "RUN cat /app/testfile.txt
+    expect_output --substring "RUN cat /app/testfile.txt
 --> Using cache"
 }
 
@@ -11095,4 +11095,40 @@ _EOF
   run_buildah 125 build $WITH_POLICY_JSON --jobs=3 --pull=never --network none $contextdir
   expect_output --substring "image not known"
   assert "$output" !~ "panic:"
+}
+
+@test "bud --from with absolute path to local transport" {
+  _prefetch busybox
+
+  local buildcontext=${TEST_SCRATCH_DIR}/buildcontext
+  mkdir -p ${buildcontext}
+
+  # Create images outside build context using all local transports
+  local imgdir=${TEST_SCRATCH_DIR}/images
+  mkdir -p ${imgdir}
+
+  run_buildah push $WITH_POLICY_JSON busybox oci-archive:${imgdir}/test.ociarchive
+  run_buildah push $WITH_POLICY_JSON busybox docker-archive:${imgdir}/test.dockerarchive
+  run_buildah push $WITH_POLICY_JSON busybox oci:${imgdir}/test-oci
+  run_buildah push $WITH_POLICY_JSON busybox dir:${imgdir}/test-dir
+
+  # Multi-stage Containerfile: --from should only override the first FROM.
+  # The second stage must still resolve "busybox" normally, proving that
+  # allowAbsolutePaths does not leak to later stages.
+  cat > ${buildcontext}/Containerfile << _EOF
+FROM placeholder-to-be-overridden AS stage0
+RUN echo stage0 > /stage.txt
+FROM busybox AS stage1
+COPY --from=stage0 /stage.txt /from-stage0.txt
+RUN cat /from-stage0.txt
+_EOF
+
+  for transport in \
+    "oci-archive:${imgdir}/test.ociarchive" \
+    "docker-archive:${imgdir}/test.dockerarchive" \
+    "oci:${imgdir}/test-oci" \
+    "dir:${imgdir}/test-dir" ; do
+    run_buildah build $WITH_POLICY_JSON --from "$transport" ${buildcontext}
+    expect_output --substring "FROM busybox AS stage1"
+  done
 }
