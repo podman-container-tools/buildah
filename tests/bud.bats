@@ -11096,3 +11096,23 @@ _EOF
   expect_output --substring "image not known"
   assert "$output" !~ "panic:"
 }
+
+@test "bud parallel bind mount of executing regular file" {
+  skip_if_no_runtime
+  _prefetch busybox
+  local contextdir=${TEST_SCRATCH_DIR}/parallel-bind-executable
+  mkdir -p $contextdir
+
+  cat > $contextdir/Containerfile <<'EOF'
+FROM busybox AS holder
+RUN --mount=type=bind,from=busybox,source=/bin/busybox,target=/tmp/busybox \
+  /tmp/busybox sleep 15
+
+FROM busybox AS contender
+RUN sleep 1
+RUN --mount=type=bind,from=busybox,source=/bin/busybox,target=/tmp/busybox \
+  true
+EOF
+
+  run_buildah build --pull=false --no-cache --jobs=2 --skip-unused-stages=false $WITH_POLICY_JSON $contextdir
+}
