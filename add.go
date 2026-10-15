@@ -135,6 +135,9 @@ type AddAndCopyOptions struct {
 	// Only items matching one of these patterns are copied. Has the same
 	// pattern format as lines of a .containerignore file.
 	Includes []string
+	// RequiredPaths is a list of required paths that must be copied. It must be used with
+	// the Includes flag.
+	RequiredPaths []string
 }
 
 // getURL writes a tar archive containing the named content
@@ -652,6 +655,7 @@ func (b *Builder) AddContext(ctx context.Context, destination string, extract bo
 						GIDMap:             srcGIDMap,
 						Excludes:           options.Excludes,
 						Includes:           options.Includes,
+						RequiredPaths:      options.RequiredPaths,
 						ExpandArchives:     extract,
 						Chmod:              options.Chmod,
 						ChownDirs:          chownDirs,
@@ -831,6 +835,7 @@ func (b *Builder) AddContext(ctx context.Context, destination string, extract bo
 					GIDMap:             srcGIDMap,
 					Excludes:           options.Excludes,
 					Includes:           options.Includes,
+					RequiredPaths:      options.RequiredPaths,
 					ExpandArchives:     extract,
 					Chmod:              options.Chmod,
 					ChownDirs:          chownDirs,

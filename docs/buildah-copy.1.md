@@ -108,6 +108,12 @@ by a path component named "." (i.e., where "/./" occurs in the path).
 
 Refrain from printing a digest of the copied content.
 
+**--required-path** *path*
+
+Require that the specific path is present among the files matched by **--include**. This
+option can be specified multiple times. Must be used with **--include**; using **--required-path**
+without **--include** will fail.
+
 **--retry** *attempts*
 
 Number of times to retry in case of failure when performing pull of images from registry.
