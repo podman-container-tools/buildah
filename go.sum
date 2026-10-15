@@ -197,8 +197,8 @@ github.com/opencontainers/runtime-tools v0.9.1-0.20260316125833-8a4db579f5c8 h1:
 github.com/opencontainers/runtime-tools v0.9.1-0.20260316125833-8a4db579f5c8/go.mod h1:DKDEfzxvRkoQ6n9TGhxQgg2IM1lY4aM0eaQP4e3oElw=
 github.com/opencontainers/selinux v1.15.1 h1:ERxeh5caJvCzNAKdI8WQbJmB1LDTn4BuaAg8wihLBpA=
 github.com/opencontainers/selinux v1.15.1/go.mod h1:LenyElirjUHszfxrjuFqC85HIeXZKumHcKMQtnaDlQQ=
-github.com/openshift/imagebuilder v1.2.22 h1:8x/nwCnA09Zkfp2UjhhySUTRe4EL4RACIEuT+6ik0/Y=
-github.com/openshift/imagebuilder v1.2.22/go.mod h1:5LX/Z+OhWMDsmhwVeu9rRxkzCAsbMITsxRY9jsxedFQ=
+github.com/openshift/imagebuilder v1.2.23-0.20261006193608-c8afb7645103 h1:RnhWcbAWlOti0pYf5SaahdiVCA514RIRQpi3S5PxoG8=
+github.com/openshift/imagebuilder v1.2.23-0.20261006193608-c8afb7645103/go.mod h1:5LX/Z+OhWMDsmhwVeu9rRxkzCAsbMITsxRY9jsxedFQ=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/sftp v1.13.11 h1:0N92SLTB8JqASJB14ZLHHzFnBV8mG9zw4K7jghEFWuE=

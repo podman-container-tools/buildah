@@ -138,6 +138,15 @@ locations, or when pulling images referred to with the **--from*** flag
 (defaults to true).  TLS verification cannot be used when talking to an
 insecure registry.
 
+**--unpack** *bool-value*
+
+Control whether archive content is extracted when added. By default, local
+archives are extracted and remote archives (HTTP/HTTPS URLs) are not. Use
+**--unpack=true** to extract remote archives, or **--unpack=false** to copy
+a local archive without extracting it. This corresponds to the **ADD --unpack=** *bool*
+instruction flag in a Containerfile/Dockerfile, which requires an explicit **true**
+or **false** value.
+
 ## EXAMPLE
 
 buildah add containerID '/myapp/app.conf' '/myapp/app.conf'
