@@ -269,18 +269,20 @@ load helpers
 }
 
 @test "ignore-socket" {
-  touch ${TEST_SCRATCH_DIR}/regular-file
+  local contextdir=${TEST_SCRATCH_DIR}/context
+  mkdir -p $contextdir
+  touch ${contextdir}/regular-file
   # This seems to be the least-worst way to create a socket: run and kill nc
-  nc -lkU ${TEST_SCRATCH_DIR}/test.socket &
+  nc -lkU ${contextdir}/test.socket &
   nc_pid=$!
   # This should succeed fairly quickly. We test with a timeout in case of
   # failure (likely reason: 'nc' not installed.)
   retries=50
-  while ! test -e ${TEST_SCRATCH_DIR}/test.socket; do
+  while ! test -e ${contextdir}/test.socket; do
       sleep 0.1
       retries=$((retries - 1))
       if [[ $retries -eq 0 ]]; then
-          die "Timed out waiting for ${TEST_SCRATCH_DIR}/test.socket (is nc installed?)"
+          die "Timed out waiting for ${contextdir}/test.socket (is nc installed?)"
       fi
   done
   # We want SIGKILL here as nmap-ncat 7.991 is misbehaving on SIGTERM and takes down the full process group.
@@ -288,14 +290,13 @@ load helpers
 
   run_buildah from $WITH_POLICY_JSON scratch
   cid=$output
-  run_buildah copy $cid ${TEST_SCRATCH_DIR}/ /
+  run_buildah copy $cid "${contextdir}/" /
   assert "${lines[0]}" =~ 'WARN copier: skipping socket "test.socket"' "check for warning log"
   run_buildah_mount $cid
   root=$output
   test \! -e $root/test.socket # socket must not have been copied
   test -e $root/regular-file # regular file still must be copied
-
-  run_buildah rm $cid
+  find $root
 }
 
 @test "copy-symlink-archive-suffix" {

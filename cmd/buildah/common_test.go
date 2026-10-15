@@ -80,7 +80,7 @@ func TestGetStore(t *testing.T) {
 	flags.String("registries-conf", "", "")
 	flags.String("userns-uid-map", "", "")
 	flags.String("userns-gid-map", "", "")
-	err := testCmd.Execute()
+	err := testCmd.ExecuteContext(t.Context())
 	if err != nil {
 		t.Error(err)
 	}
