@@ -254,7 +254,9 @@ func CommonBuildOptionsFromFlagSet(flags *pflag.FlagSet, findFlagFunc func(name 
 // when seccompProfile is non-default and securityOpts does not already contain
 // a seccomp option.
 func addSeccompFromConfig(securityOpts []string, seccompProfile string) []string {
-	if seccompProfile == "" || seccompProfile == SeccompDefaultPath {
+	// When compiled without seccomp build tag (e.g. podman-remote),
+	// we don't forward the client's seccomp configuration over to the server.
+	if !supportsSeccomp || seccompProfile == "" || seccompProfile == SeccompDefaultPath {
 		return securityOpts
 	}
 	for _, opt := range securityOpts {
@@ -325,9 +327,8 @@ func parseSecurityOpts(securityOpts []string, commonOpts *define.CommonBuildOpti
 		case "apparmor":
 			commonOpts.ApparmorProfile = con[1]
 		case "seccomp":
-			if !supportsSeccomp && con[1] != "unconfined" {
-				return fmt.Errorf("seccomp profile %q requested, but seccomp support is not enabled in this build", con[1])
-			}
+			// Support for the profile is checked by setupSeccomp() in the
+			// binary that runs the build, which may not be this one.
 			commonOpts.SeccompProfilePath = con[1]
 		case "mask":
 			commonOpts.Masks = append(commonOpts.Masks, strings.Split(con[1], ":")...)

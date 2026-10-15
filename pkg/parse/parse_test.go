@@ -46,29 +46,29 @@ func TestCommonBuildOptionsSeccompFromConfig(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                         string
-		containersConf               string
-		securityOpts                 []string
-		expectedProfile              string
-		expectErrorWithoutSeccompTag bool
+		name                           string
+		containersConf                 string
+		securityOpts                   []string
+		expectedProfile                string
+		configIgnoredWithoutSeccompTag bool
 	}{
 		{
-			name:            "configured unconfined",
+			name:                           "configured unconfined",
+			containersConf:                 "[containers]\nseccomp_profile = \"unconfined\"\n",
+			expectedProfile:                "unconfined",
+			configIgnoredWithoutSeccompTag: true,
+		},
+		{
+			name:            "command line overrides config",
 			containersConf:  "[containers]\nseccomp_profile = \"unconfined\"\n",
-			expectedProfile: "unconfined",
+			securityOpts:    []string{"seccomp=/tmp/custom-seccomp.json"},
+			expectedProfile: "/tmp/custom-seccomp.json",
 		},
 		{
-			name:                         "command line overrides config",
-			containersConf:               "[containers]\nseccomp_profile = \"unconfined\"\n",
-			securityOpts:                 []string{"seccomp=/tmp/custom-seccomp.json"},
-			expectedProfile:              "/tmp/custom-seccomp.json",
-			expectErrorWithoutSeccompTag: true,
-		},
-		{
-			name:                         "configured custom profile",
-			containersConf:               "[containers]\nseccomp_profile = \"/tmp/custom-seccomp.json\"\n",
-			expectedProfile:              "/tmp/custom-seccomp.json",
-			expectErrorWithoutSeccompTag: true,
+			name:                           "configured custom profile",
+			containersConf:                 "[containers]\nseccomp_profile = \"/tmp/custom-seccomp.json\"\n",
+			expectedProfile:                "/tmp/custom-seccomp.json",
+			configIgnoredWithoutSeccompTag: true,
 		},
 		{
 			name:            "no configured profile",
@@ -85,12 +85,12 @@ func TestCommonBuildOptionsSeccompFromConfig(t *testing.T) {
 
 			fs := newCommonBuildOptionsFlagSet(t, test.securityOpts)
 			commonOpts, err := CommonBuildOptionsFromFlagSet(fs, fs.Lookup)
-			if test.expectErrorWithoutSeccompTag && !supportsSeccomp {
-				require.ErrorContains(t, err, "seccomp support is not enabled in this build")
-				return
-			}
 			require.NoError(t, err)
-			assert.Equal(t, test.expectedProfile, commonOpts.SeccompProfilePath)
+			expectedProfile := test.expectedProfile
+			if test.configIgnoredWithoutSeccompTag && !supportsSeccomp {
+				expectedProfile = ""
+			}
+			assert.Equal(t, expectedProfile, commonOpts.SeccompProfilePath)
 		})
 	}
 }
