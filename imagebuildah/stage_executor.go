@@ -2163,9 +2163,13 @@ func (s *stageExecutor) getCreatedBy(node *parser.Node, addedContentSummary stri
 				mountOptionSource = mountInfo.Source
 				mountOptionSource, err = imagebuilder.ProcessWord(mountOptionSource, s.stage.Builder.Arguments())
 				if err != nil {
-					return "", fmt.Errorf("getCreatedBy: while replacing arg variables with values for format %q: %w", mountOptionSource, err)
+					return "", fmt.Errorf("getCreatedBy: while replacing arg variables with values for source=%q: %w", mountOptionSource, err)
 				}
 				mountOptionFrom = mountInfo.From
+				mountOptionFrom, err = imagebuilder.ProcessWord(mountOptionFrom, s.stage.Builder.Arguments())
+				if err != nil {
+					return "", fmt.Errorf("getCreatedBy: while replacing arg variables with values for from=%q: %w", mountOptionFrom, err)
+				}
 				// If source is not specified then default is '.'
 				if mountOptionSource == "" {
 					mountOptionSource = "."
@@ -2184,16 +2188,20 @@ func (s *stageExecutor) getCreatedBy(node *parser.Node, addedContentSummary stri
 						// Found valid image, get image digest.
 						mountCheckSum = builder.FromImageDigest
 					} else {
-						if s.executor.additionalBuildContexts[mountOptionFrom].IsImage {
-							if builder, ok := s.executor.containerMap[s.executor.additionalBuildContexts[mountOptionFrom].Value]; ok {
+						additionalBuildContext, ok := s.executor.additionalBuildContexts[mountOptionFrom]
+						if !ok {
+							return "", fmt.Errorf("internal error locating additional build context %q", mountOptionFrom)
+						}
+						if additionalBuildContext.IsImage {
+							if builder, ok := s.executor.containerMap[additionalBuildContext.Value]; ok {
 								// Found valid image, get image digest.
 								mountCheckSum = builder.FromImageDigest
 							}
 						} else {
 							// Found additional build context, get directory sha.
-							basePath := s.executor.additionalBuildContexts[mountOptionFrom].Value
-							if s.executor.additionalBuildContexts[mountOptionFrom].IsURL {
-								basePath = s.executor.additionalBuildContexts[mountOptionFrom].DownloadedCache
+							basePath := additionalBuildContext.Value
+							if additionalBuildContext.IsURL {
+								basePath = additionalBuildContext.DownloadedCache
 							}
 							mountCheckSum, err = generatePathChecksum(filepath.Join(basePath, mountOptionSource))
 							if err != nil {

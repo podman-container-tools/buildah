@@ -9725,6 +9725,19 @@ _EOF
   run_buildah build --mount=type=bind,from=alpine,target=/alpine "${contextdir}"
 }
 
+@test "build-with-run-image-arg-mount" {
+  _prefetch busybox
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/context
+  mkdir -p "${contextdir}"
+  cat > "${contextdir}"/Containerfile << _EOF
+  FROM busybox
+  ARG NONCE=alpine
+  RUN --mount=type=bind,from=\${NONCE},target=/alpine cat /alpine/etc/os-release | tee /alpine.os-release
+_EOF
+  run_buildah build --layers "${contextdir}"
+}
+
 @test "bud with FROM --after" {
   # This tests the 'FROM --after' workflow, i.e. that:
   # - --after is enough to pull in the builder stage as a dep
