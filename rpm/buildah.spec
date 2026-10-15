@@ -70,6 +70,9 @@ BuildRequires: libseccomp-static
 %else
 BuildRequires: libseccomp-devel
 %endif
+%if %{defined fedora}
+BuildRequires: binutils-aarch64-linux-gnu binutils-powerpc64le-linux-gnu binutils-ppc64le-linux-gnu binutils-riscv64-linux-gnu binutils-s390x-linux-gnu binutils-x86_64-linux-gnu
+%endif
 Requires: libseccomp >= 2.4.1-0
 Suggests: cpp
 %if %{defined sequoia}
@@ -145,7 +148,11 @@ export BUILDTAGS+=" libtrust_openssl"
 export BUILDTAGS+=" containers_image_sequoia"
 %endif
 
-%{__rm} -f internal/mkcw/embed/entrypoint_amd64.gz
+%if %{defined fedora}
+%{__rm} -f pkg/binfmt/embed/ok_amd64 pkg/binfmt/embed/ok_arm64 pkg/binfmt/embed/ok_ppc64le pkg/binfmt/embed/ok_riscv64 pkg/binfmt/embed/ok_s390x
+%{__make} pkg/binfmt/embed/ok_amd64 pkg/binfmt/embed/ok_arm64 pkg/binfmt/embed/ok_ppc64le pkg/binfmt/embed/ok_riscv64 pkg/binfmt/embed/ok_s390x
+%endif
+%{__rm} -f internal/mkcw/embed/entrypoint*.gz
 %{__make} internal/mkcw/embed/entrypoint_amd64.gz
 %gobuild -o bin/%{name} ./cmd/%{name}
 %gobuild -o bin/imgtype ./tests/imgtype
