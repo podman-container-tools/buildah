@@ -530,7 +530,7 @@ func (b *executor) waitForStage(ctx context.Context, name string, stages imagebu
 		b.stagesLock.Unlock()
 
 		if terminationError != nil {
-			return false, terminationError
+			return true, terminationError
 		}
 		if terminated {
 			return true, nil

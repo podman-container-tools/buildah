@@ -1,11 +1,14 @@
 package imagebuildah
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"testing"
 
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/openshift/imagebuilder"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -96,6 +99,70 @@ func TestHistoryEntriesEqual(t *testing.T) {
 			require.Nil(t, err, "error unmarshalling history %q: %v", testCases[i].b, err)
 			equal := historyEntriesEqual(a, b)
 			assert.Equal(t, testCases[i].equal, equal, "historyEntriesEqual(%q, %q) != %v", testCases[i].a, testCases[i].b, testCases[i].equal)
+		})
+	}
+}
+
+func TestWaitForStage(t *testing.T) {
+	t.Parallel()
+
+	stages := imagebuilder.Stages{
+		{Position: 0, Name: "stage0"},
+		{Position: 1, Name: "stage1"},
+	}
+
+	testErr := errors.New("simulated stage error")
+
+	testCases := []struct {
+		name            string
+		stageName       string
+		terminatedStage map[int]error
+		expectedIsStage bool
+		expectedErr     error
+	}{
+		{
+			name:            "non-existent stage",
+			stageName:       "nonexistent",
+			terminatedStage: map[int]error{},
+			expectedIsStage: false,
+			expectedErr:     nil,
+		},
+		{
+			name:            "stage completed successfully",
+			stageName:       "stage0",
+			terminatedStage: map[int]error{0: nil},
+			expectedIsStage: true,
+			expectedErr:     nil,
+		},
+		{
+			name:            "stage failed with error",
+			stageName:       "stage0",
+			terminatedStage: map[int]error{0: testErr},
+			expectedIsStage: true,
+			expectedErr:     testErr,
+		},
+		{
+			name:            "stage referenced by index failed with error",
+			stageName:       "0",
+			terminatedStage: map[int]error{0: testErr},
+			expectedIsStage: true,
+			expectedErr:     testErr,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			b := &executor{
+				terminatedStage: tc.terminatedStage,
+				stages:          make(map[int]*stageExecutor),
+			}
+			isStage, err := b.waitForStage(context.Background(), tc.stageName, stages)
+			assert.Equal(t, tc.expectedIsStage, isStage)
+			if tc.expectedErr != nil {
+				assert.ErrorIs(t, err, tc.expectedErr)
+			} else {
+				assert.NoError(t, err)
+			}
 		})
 	}
 }
