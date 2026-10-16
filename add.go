@@ -807,7 +807,7 @@ func (b *Builder) AddContext(ctx context.Context, destination string, extract bo
 				if options.Parents {
 					parentsPrefixToRemove, parentsToSkip := getParentsPrefixToRemoveAndParentsToSkip(src, options.ContextDir)
 					writer = newTarFilterer(writer, func(hdr *tar.Header) (tarFilterAction, bool, io.Reader) {
-						if slices.Contains(parentsToSkip, hdr.Name) && hdr.Typeflag == tar.TypeDir {
+						if hdr.Typeflag == tar.TypeDir && slices.Contains(parentsToSkip, strings.TrimSuffix(hdr.Name, "/")) {
 							return tarFilterSkip, false, nil
 						}
 						hdr.Name = strings.TrimPrefix(hdr.Name, parentsPrefixToRemove)

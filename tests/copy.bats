@@ -396,6 +396,9 @@ stuff/mystuff"
   touch ${mytest}/y/a.txt
   touch ${mytest}/y/b.txt
 
+  bugroot=${TEST_SCRATCH_DIR}/parent_bug/mytest
+  mkdir -p ${bugroot}/x && touch ${bugroot}/x/a.txt
+
 expect_all="
 parents
 parents/x
@@ -422,31 +425,39 @@ parents/y
 parents/y/a.txt
 parents/y/b.txt"
 
+expect_issue_7165="
+parents
+parents/x
+parents/x/a.txt"
 
-  # paths | expected
-  tests="
-  ${mytest}/./*/a.txt | ${expect_a_txt}
-  ${mytest}/./y/*     | ${expect_only_y_dir}
-  ${mytest}/./*/b.txt | ${expect_b_txt}
-  ${mytest}/./*       | ${expect_all}
-  "
 
-  local -A paths
-  local -A expected
-  while read paths expected; do
+    # paths | expected
+    local -a tests=(
+        "${mytest}/./*/a.txt | ${expect_a_txt}"
+        "${mytest}/./y/*     | ${expect_only_y_dir}"
+        "${mytest}/./*/b.txt | ${expect_b_txt}"
+        "${mytest}/./*       | ${expect_all}"
+        "${bugroot}/./x/a.txt | ${expect_issue_7165}"
+    )
 
-    run_buildah from $WITH_POLICY_JSON scratch
-    cid=$output
+    for row in "${tests[@]}"; do
+        paths="${row%%|*}"
+        paths="${paths%% }"
+        expect="${row#*|}"
+        expect="${expect# }"
 
-    run_buildah copy --parents $cid ${paths} /parents/
+        run_buildah from $WITH_POLICY_JSON scratch
+        cid=$output
 
-    run_buildah_mount $cid
-    mnt=$output
-    run find $mnt -printf "%P\n"
-    filelist=$(LC_ALL=C sort <<<"$output")
-    run_buildah_umount $cid
-    expect_output --from="$filelist" "$expect" "container file list"
-  done < <(parse_table "$tests")
+        run_buildah copy --parents $cid ${paths} /parents/
+
+        run_buildah_mount $cid
+        mnt=$output
+        run find $mnt -printf "%P\n"
+        filelist=$(LC_ALL=C sort <<<"$output")
+        run_buildah_umount $cid
+        expect_output --from="$filelist" "$expect" "container file list"
+    done
 }
 
 @test "copy-quiet" {
