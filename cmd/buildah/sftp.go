@@ -685,7 +685,7 @@ func mountSshfsCmd(c *cobra.Command, args []string) error {
 			defer func() {
 				if !succeeded {
 					if err := serveSftp.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
-						logrus.Errorf("terminating sftp server for %q after startup error: %v", err, toMount)
+						logrus.Errorf("terminating sftp server for %q after startup error: %v", toMount, err)
 					}
 				}
 			}()
@@ -893,8 +893,8 @@ func umountSshfsCmd(c *cobra.Command, args []string) error {
 			if umountError != nil {
 				errs = append(errs, fmt.Errorf("umount %s: %w", mountPoint, umountError))
 				logrus.Debugf("umount(%q): %v", mountPoint, umountError)
-				fumount := exec.CommandContext(getContext(), "fuserumount3", "-u", mountPoint)
-				umount.Stdin = &bytes.Buffer{}
+				fumount := exec.CommandContext(getContext(), "fusermount3", "-u", mountPoint)
+				fumount.Stdin = &bytes.Buffer{}
 				fumount.Stdout = os.Stdout
 				fumount.Stderr = os.Stderr
 				fumount.Dir = "/"
