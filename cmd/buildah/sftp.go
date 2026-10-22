@@ -685,7 +685,7 @@ func mountSshfsCmd(c *cobra.Command, args []string) error {
 			defer func() {
 				if !succeeded {
 					if err := serveSftp.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
-						logrus.Errorf("terminating sftp server for %q after startup error: %v", err, toMount)
+						logrus.Errorf("terminating sftp server for %q after startup error: %v", toMount, err)
 					}
 				}
 			}()
