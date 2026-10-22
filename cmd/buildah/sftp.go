@@ -687,6 +687,9 @@ func mountSshfsCmd(c *cobra.Command, args []string) error {
 					if err := serveSftp.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
 						logrus.Errorf("terminating sftp server for %q after startup error: %v", toMount, err)
 					}
+					if err := serveSftp.Wait(); err != nil {
+						logrus.Debugf("waiting for sftp server for %q after startup error: %v", toMount, err)
+					}
 				}
 			}()
 
@@ -761,6 +764,7 @@ func mountSshfsCmd(c *cobra.Command, args []string) error {
 		fmt.Println(whatGoesWhere[toMount])
 	}
 
+	wg.Wait()
 	// Wait for the mountpoints to have filesystems on them, so that when
 	// we return, the caller can access their contents immediately.
 	for toMount, where := range whatGoesWhere {
