@@ -83,6 +83,8 @@ type stageExecutor struct {
 	containerIDs          []string
 	stage                 *imagebuilder.Stage
 	didExecute            bool
+	workdirInProgress     bool
+	workdirCreatesLayer   bool
 	argsFromContainerfile []string
 	hasLink               bool
 	isLastStep            bool
@@ -1306,12 +1308,25 @@ func (s *stageExecutor) Delete() (err error) {
 
 // stepRequiresLayer indicates whether or not the step should be followed by
 // committing a layer container when creating an intermediate image.
-func (*stageExecutor) stepRequiresLayer(step *imagebuilder.Step) bool {
+func (s *stageExecutor) stepRequiresLayer(step *imagebuilder.Step) bool {
 	switch strings.ToUpper(step.Command) {
 	case "ADD", "COPY", "RUN":
 		return true
+	case "WORKDIR":
+		return s.workdirCreatesLayer
 	}
 	return false
+}
+
+// runStep executes a Dockerfile instruction and records whether WORKDIR
+// created a directory in the current root filesystem.
+func (s *stageExecutor) runStep(ib *imagebuilder.Builder, step *imagebuilder.Step, noRunsRemaining bool) error {
+	if strings.EqualFold(step.Command, command.Workdir) {
+		s.workdirCreatesLayer = false
+		s.workdirInProgress = true
+		defer func() { s.workdirInProgress = false }()
+	}
+	return ib.Run(step, s, noRunsRemaining)
 }
 
 // getImageRootfs checks for an image matching the passed-in name in local
@@ -1653,13 +1668,13 @@ func (s *stageExecutor) execute(ctx context.Context, base string) (imgID string,
 		// instruction.
 		if !s.executor.layers {
 			s.didExecute = true
-			if s.stepRequiresLayer(step) {
-				executedLayerStep = true
-			}
-			err := ib.Run(step, s, noRunsRemaining)
+			err := s.runStep(ib, step, noRunsRemaining)
 			if err != nil {
 				logrus.Debugf("Error building at step %+v: %v", *step, err)
 				return "", nil, false, fmt.Errorf("building at STEP \"%s\": %w", step.Message, err)
+			}
+			if s.stepRequiresLayer(step) {
+				executedLayerStep = true
 			}
 			select {
 			case <-ctx.Done():
@@ -1797,10 +1812,10 @@ func (s *stageExecutor) execute(ctx context.Context, base string) (imgID string,
 			// the content that's copied in.  We need to compute that information so that
 			// it can be used to evaluate the cache, which means we need to go ahead
 			// and copy the content.
-			canMatchCacheOnlyAfterRun = (step.Command == command.Add || step.Command == command.Copy)
+			canMatchCacheOnlyAfterRun = (step.Command == command.Add || step.Command == command.Copy || step.Command == command.Workdir)
 			if canMatchCacheOnlyAfterRun {
 				prevLinked := len(s.builder.AppendedLinkedLayers)
-				if err = ib.Run(step, s, noRunsRemaining); err != nil {
+				if err = s.runStep(ib, step, noRunsRemaining); err != nil {
 					logrus.Debugf("Error building at step %+v: %v", *step, err)
 					return "", nil, false, fmt.Errorf("building at STEP \"%s\": %w", step.Message, err)
 				}
@@ -1855,7 +1870,7 @@ func (s *stageExecutor) execute(ctx context.Context, base string) (imgID string,
 			// Process the instruction directly.
 			s.didExecute = true
 			prevLinked := len(s.builder.AppendedLinkedLayers)
-			if err = ib.Run(step, s, noRunsRemaining); err != nil {
+			if err = s.runStep(ib, step, noRunsRemaining); err != nil {
 				logrus.Debugf("Error building at step %+v: %v", *step, err)
 				return "", nil, false, fmt.Errorf("building at STEP \"%s\": %w", step.Message, err)
 			}
@@ -1914,9 +1929,9 @@ func (s *stageExecutor) execute(ctx context.Context, base string) (imgID string,
 			// last cache image will be all that we need, since we
 			// still don't want to restart using the image's
 			// configuration blob.
-			if !s.stepRequiresLayer(step) {
+			if !canMatchCacheOnlyAfterRun && !s.stepRequiresLayer(step) {
 				s.didExecute = true
-				err := ib.Run(step, s, noRunsRemaining)
+				err := s.runStep(ib, step, noRunsRemaining)
 				if err != nil {
 					logrus.Debugf("Error building at step %+v: %v", *step, err)
 					return "", nil, false, fmt.Errorf("building at STEP \"%s\": %w", step.Message, err)
@@ -2973,6 +2988,20 @@ func (s *stageExecutor) EnsureContainerPathAs(path, user string, mode *os.FileMo
 	case <-s.ctx.Done():
 		return s.ctx.Err()
 	default:
+	}
+	if s.workdirInProgress && s.mountPoint != "" {
+		containerPath := filepath.Clean(path)
+		containerPath = strings.TrimPrefix(containerPath, string(os.PathSeparator))
+		evaluatedPath, err := copier.EvalContext(s.ctx, s.mountPoint, filepath.Join(s.mountPoint, containerPath), copier.EvalOptions{})
+		if err != nil {
+			return fmt.Errorf("evaluating working directory %q: %w", path, err)
+		}
+		if _, err := os.Stat(evaluatedPath); err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("checking working directory %q: %w", path, err)
+			}
+			s.workdirCreatesLayer = true
+		}
 	}
 	return s.builder.EnsureContainerPathAsContext(s.ctx, path, user, mode)
 }

@@ -925,9 +925,9 @@ _EOF
     local derivedlayers="$output"
     # expectations vary based on what that instruction was
     case "$instruction" in
-      # if it's ADD, COPY, or RUN, accept either the same set of layers, or one more layer added,
+      # if it's ADD, COPY, RUN, or WORKDIR, accept either the same set of layers, or one more layer added,
       # but not with a digest that matches a turns-out-to-be-empty layer
-      ADD*|COPY*|RUN*)
+      ADD*|COPY*|RUN*|WORKDIR*)
         if test ${baselayersplusone} -eq ${derivedlayers} ; then
           run_buildah inspect --type=image --format "{{ index .Docker.RootFS.DiffIDs $baselayers }}" $(< ${TEST_SCRATCH_DIR}/iid.txt)
           local lastdiffid="$output"
@@ -8033,6 +8033,29 @@ _EOF
   run_buildah bud $WITH_POLICY_JSON --network pasta:--mtu,2000,--ns-mac-addr,"$mac" $BUDFILES/network
   assert "$output" =~ "$mac" "ip addr shows custom mac address"
   assert "$output" =~ "mtu 2000" "ip addr shows mtu 2000"
+}
+
+@test "bud WORKDIR is present and root-owned before container start" {
+  for layers in false true; do
+    target=workdir-created-image-${layers}
+    run_buildah build $WITH_POLICY_JSON --layers=${layers} -t ${target} $BUDFILES/workdir-created
+    run_buildah from ${target}
+    ctr="$output"
+    run_buildah_mount "$ctr"
+    root="$output"
+    test -d "${root}/workspace"
+    run stat -c '%u:%g' "${root}/workspace"
+    assert "$status" -eq 0
+    assert "$output" = "0:0"
+    run_buildah_umount "$ctr"
+  done
+}
+
+@test "bud WORKDIR through absolute symlink does not create a layer" {
+  target=workdir-existing-symlink
+  run_buildah build $WITH_POLICY_JSON --layers=true -t ${target} $BUDFILES/workdir-existing-symlink
+  run_buildah inspect --format '{{range .Docker.History}}{{.CreatedBy}}:{{.EmptyLayer}}{{"\n"}}{{end}}' ${target}
+  expect_output --substring "WORKDIR /var/run/buildah-workdir-existing-test:true"
 }
 
 @test "bud WORKDIR owned by USER" {

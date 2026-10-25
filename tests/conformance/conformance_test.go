@@ -3666,6 +3666,17 @@ var internalTestCases = []testCase{
 	},
 
 	{
+		name: "workdir-only-persists-created-directory",
+		dockerfileContents: strings.Join([]string{
+			"FROM scratch",
+			"WORKDIR /workspace",
+			"USER 12345:12345",
+			"CMD [\"/bin/true\"]",
+		}, "\n"),
+		dockerUseBuildKit: true,
+	},
+
+	{
 		name: "workdir-owner", // from issue #3620
 		dockerfileContents: strings.Join([]string{
 			`# syntax=mirror.gcr.io/docker/dockerfile:1.4`,

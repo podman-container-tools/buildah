@@ -166,3 +166,26 @@ func TestWaitForStage(t *testing.T) {
 		})
 	}
 }
+
+func TestStepRequiresLayer(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		command string
+		created bool
+		want    bool
+	}{
+		{name: "ADD", command: "ADD", want: true},
+		{name: "COPY", command: "COPY", want: true},
+		{name: "RUN", command: "RUN", want: true},
+		{name: "WORKDIR created", command: "WORKDIR", created: true, want: true},
+		{name: "WORKDIR existing", command: "WORKDIR"},
+		{name: "USER after WORKDIR", command: "USER", created: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &stageExecutor{workdirCreatesLayer: tc.created}
+			assert.Equal(t, tc.want, s.stepRequiresLayer(&imagebuilder.Step{Command: tc.command}))
+		})
+	}
+}

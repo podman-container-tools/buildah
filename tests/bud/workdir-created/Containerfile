@@ -1,0 +1,4 @@
+FROM scratch
+WORKDIR /workspace
+USER 12345:12345
+CMD ["true"]
