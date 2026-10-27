@@ -9518,6 +9518,269 @@ EOF
   assert "$output" !~ "excluded.txt"
 }
 
+@test "bud RUN bind mount excludes dockerignore files" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bind-mount-ignore
+  mkdir -p "$contextdir"
+
+  echo "included" > "$contextdir/included.txt"
+  echo "excluded" > "$contextdir/excluded.txt"
+  echo "excluded.txt" > "$contextdir/.dockerignore"
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine
+RUN --mount=type=bind,target=/files ls -1 /files/
+EOF
+
+  run_buildah build --layers $WITH_POLICY_JSON -t bind-mount-ignore "$contextdir"
+  expect_output --substring "included.txt"
+  assert "$output" !~ "excluded.txt"
+}
+
+@test "bud RUN bind mount rejects dockerignore source" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bind-mount-ignore-source
+  mkdir -p "$contextdir"
+
+  echo "excluded" > "$contextdir/excluded.txt"
+  echo "excluded.txt" > "$contextdir/.dockerignore"
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine
+RUN --mount=type=bind,target=/files/excluded.txt,source=./excluded.txt cat /files/excluded.txt
+EOF
+
+  run_buildah 125 build --layers $WITH_POLICY_JSON "$contextdir"
+}
+
+@test "bud RUN bind mount respects dockerignore negation patterns" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bind-mount-ignore-negation
+  mkdir -p "$contextdir/keep" "$contextdir/drop"
+
+  echo "keep me" > "$contextdir/keep/keep.txt"
+  echo "exclude me" > "$contextdir/keep/excluded.txt"
+  echo "exclude me" > "$contextdir/drop/excluded.txt"
+
+  cat > "$contextdir/.dockerignore" << EOF
+keep/
+!keep/keep.txt
+drop/
+EOF
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine
+RUN --mount=type=bind,target=/context sh -c 'test -f /context/keep/keep.txt && test ! -e /context/keep/excluded.txt && test ! -e /context/drop'
+EOF
+
+  run_buildah build --no-cache $WITH_POLICY_JSON -t bind-mount-ignore-negation "$contextdir"
+}
+
+@test "bud RUN bind mount respects dockerignore negation with wildcard directories" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bind-mount-ignore-wildcard-negation
+  mkdir -p "$contextdir/keep/sub"
+
+  echo "keep me" > "$contextdir/keep/sub/important.txt"
+  echo "exclude me" > "$contextdir/keep/sub/ignored.txt"
+
+  cat > "$contextdir/.dockerignore" << EOF
+keep/
+!keep/*/important.txt
+EOF
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine
+RUN --mount=type=bind,target=/context sh -c 'test -f /context/keep/sub/important.txt && test ! -e /context/keep/sub/ignored.txt'
+EOF
+
+  run_buildah build --no-cache $WITH_POLICY_JSON -t bind-mount-ignore-wildcard-negation "$contextdir"
+}
+
+@test "bud RUN bind mount rw preserves behaviour with dockerignore" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bind-mount-rw-ignore
+  mkdir -p "$contextdir"
+
+  echo "original" > "$contextdir/included.txt"
+  echo "excluded.txt" > "$contextdir/.dockerignore"
+  echo "excluded" > "$contextdir/excluded.txt"
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine
+RUN --mount=type=bind,target=/files,rw sh -c 'echo changed > /files/included.txt; cat /files/included.txt; test ! -e /files/excluded.txt'
+EOF
+
+  run_buildah build --no-cache $WITH_POLICY_JSON -t bind-mount-rw-ignore "$contextdir"
+  expect_output --substring "changed"
+
+  # Writes must not propagate back to the original context.
+  [[ "$(cat "$contextdir/included.txt")" == "original" ]]
+}
+
+@test "bud RUN bind mount from stage works with dockerignore" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bind-mount-stage-ignore
+  mkdir -p "$contextdir"
+
+  echo "included" > "$contextdir/included.txt"
+  echo "excluded.txt" > "$contextdir/.dockerignore"
+  echo "excluded" > "$contextdir/excluded.txt"
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine AS source
+RUN echo stage-content > /stage.txt
+
+FROM alpine
+RUN --mount=type=bind,from=source,target=/stage --mount=type=bind,target=/context cat /stage/stage.txt && ls -1 /context/
+EOF
+
+  run_buildah build --no-cache $WITH_POLICY_JSON -t bind-mount-stage-ignore "$contextdir"
+  expect_output --substring "stage-content"
+  expect_output --substring "included.txt"
+  assert "$output" !~ "excluded.txt"
+}
+
+@test "bud RUN bind mount preserves Buildah write persistence with dockerignore" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bind-mount-rw-persist-ignore
+  mkdir -p "$contextdir"
+
+  echo "original" > "$contextdir/included.txt"
+  echo "excluded.txt" > "$contextdir/.dockerignore"
+  echo "excluded" > "$contextdir/excluded.txt"
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine
+RUN --mount=type=bind,target=/files,rw sh -c 'echo changed > /files/included.txt'
+RUN --mount=type=bind,target=/files sh -c 'test "\$(cat /files/included.txt)" = changed && test ! -e /files/excluded.txt'
+EOF
+
+  run_buildah build --no-cache $WITH_POLICY_JSON -t bind-mount-rw-persist-ignore "$contextdir"
+
+  # Writes persist between RUN instructions, but must not modify the host context.
+  [[ "$(cat "$contextdir/included.txt")" == "original" ]]
+  [[ "$(cat "$contextdir/excluded.txt")" == "excluded" ]]
+}
+
+@test "bud RUN bind mount respects dockerignore pattern ordering" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bind-mount-ignore-ordering
+  mkdir -p "$contextdir/keep"
+
+  echo "keep me" > "$contextdir/keep/keep.txt"
+  echo "exclude me" > "$contextdir/keep/excluded.txt"
+
+  cat > "$contextdir/.dockerignore" << EOF
+keep/
+!keep/keep.txt
+keep/keep.txt
+EOF
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine
+RUN --mount=type=bind,target=/context sh -c 'test ! -e /context/keep/keep.txt && test ! -e /context/keep/excluded.txt'
+EOF
+
+  run_buildah build --no-cache $WITH_POLICY_JSON -t bind-mount-ignore-ordering "$contextdir"
+}
+
+@test "bud RUN bind mount uses containerignore when both ignore files exist" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bind-mount-containerignore
+  mkdir -p "$contextdir"
+
+  echo "keep me" > "$contextdir/included.txt"
+  echo "exclude me" > "$contextdir/excluded.txt"
+
+  cat > "$contextdir/.containerignore" << EOF
+excluded.txt
+EOF
+
+  cat > "$contextdir/.dockerignore" << EOF
+!excluded.txt
+EOF
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine
+RUN --mount=type=bind,target=/context sh -c 'test -f /context/included.txt && test ! -e /context/excluded.txt'
+EOF
+
+  run_buildah build --no-cache $WITH_POLICY_JSON -t bind-mount-containerignore "$contextdir"
+}
+
+@test "bud RUN stage bind mount does not filter stage contents" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bind-mount-stage-ignore
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/.dockerignore" << EOF
+excluded.txt
+EOF
+
+  echo "context file" > "$contextdir/included.txt"
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine AS source
+RUN echo "stage file" > /excluded.txt
+
+FROM alpine
+COPY included.txt /included.txt
+RUN --mount=type=bind,from=source,source=/,target=/stage \
+    test "\$(cat /stage/excluded.txt)" = "stage file" && \
+    test -f /included.txt
+EOF
+
+  run_buildah build --no-cache $WITH_POLICY_JSON -t bind-mount-stage-ignore "$contextdir"
+}
+
+@test "bud build with dockerignore and no default context bind mount" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/ignore-no-run-bind-mount
+  mkdir -p "$contextdir"
+
+  echo "included" > "$contextdir/included.txt"
+  echo "excluded" > "$contextdir/excluded.txt"
+
+  cat > "$contextdir/.dockerignore" << EOF
+excluded.txt
+EOF
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine
+COPY included.txt /included.txt
+RUN cat /included.txt && test ! -e /excluded.txt
+EOF
+
+  run_buildah build --no-cache $WITH_POLICY_JSON -t ignore-no-run-bind-mount "$contextdir"
+  expect_output --substring "included"
+}
+
+@test "bud RUN bind mount filtering does not affect later COPY and ADD" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bind-mount-ignore-later-copy-add
+  mkdir -p "$contextdir"
+
+  echo "visible to bind mount" > "$contextdir/included.txt"
+  echo "visible to COPY" > "$contextdir/copy-after-bind.txt"
+  echo "visible to ADD" > "$contextdir/add-after-bind.txt"
+  echo "excluded" > "$contextdir/excluded.txt"
+  echo "excluded.txt" > "$contextdir/.dockerignore"
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine
+RUN --mount=type=bind,target=/context \
+    test -f /context/included.txt && \
+    test ! -e /context/excluded.txt
+COPY copy-after-bind.txt /copy-after-bind.txt
+ADD add-after-bind.txt /add-after-bind.txt
+RUN test "\$(cat /copy-after-bind.txt)" = "visible to COPY" && \
+    test "\$(cat /add-after-bind.txt)" = "visible to ADD"
+EOF
+
+  run_buildah build --no-cache $WITH_POLICY_JSON -t bind-mount-ignore-later-copy-add "$contextdir"
+}
+
 @test "bud multi-platform --layers should create separate images for each platform" {
   _prefetch busybox
   local contextdir=${TEST_SCRATCH_DIR}/bud/multiplatform-layers
