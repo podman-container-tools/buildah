@@ -86,6 +86,10 @@ type executor struct {
 	store                          storage.Store
 	contextDir                     string
 	contextDirWritesAreDiscarded   bool
+	contextDirFilterLock           sync.Mutex
+	contextDirFilterDone           chan struct{}
+	contextDirFilterErr            error
+	contextDirRunBindMount         string
 	pullPolicy                     define.PullPolicy
 	registry                       string
 	ignoreUnrecognizedInstructions bool
@@ -989,6 +993,23 @@ func (b *executor) Build(ctx context.Context, stages imagebuilder.Stages) (image
 		if err := g.Wait(); err != nil {
 			logrus.Debugf("Failed to cleanup additional build context temp dir: %v", err)
 			lastErr = err
+		}
+
+		b.contextDirFilterLock.Lock()
+		dir := b.contextDirRunBindMount
+		b.contextDirFilterLock.Unlock()
+
+		if dir != "" {
+			if err := os.RemoveAll(dir); err != nil {
+				logrus.Debugf("Failed to remove temporary RUN bind mount context: %v", err)
+				lastErr = err
+			} else {
+				b.contextDirFilterLock.Lock()
+				if b.contextDirRunBindMount == dir {
+					b.contextDirRunBindMount = ""
+				}
+				b.contextDirFilterLock.Unlock()
+			}
 		}
 
 		if b.rusageLogFile != nil && b.rusageLogFile != b.out {
