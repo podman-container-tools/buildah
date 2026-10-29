@@ -9781,6 +9781,59 @@ EOF
   run_buildah build --no-cache $WITH_POLICY_JSON -t bind-mount-ignore-later-copy-add "$contextdir"
 }
 
+@test "bud RUN bind mount can disable dockerignore filtering" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bind-mount-ignore-opt-out
+  mkdir -p "$contextdir"
+
+  echo "excluded" > "$contextdir/excluded.txt"
+  echo "excluded.txt" > "$contextdir/.dockerignore"
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine
+RUN --mount=type=bind,target=/context test -f /context/excluded.txt
+EOF
+
+  run_buildah build --no-cache --disable-run-bind-mount-ignore $WITH_POLICY_JSON "$contextdir"
+}
+
+@test "bud RUN bind mount ignore environment disables filtering" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bind-mount-ignore-env-disable
+  mkdir -p "$contextdir"
+
+  echo "excluded" > "$contextdir/excluded.txt"
+  echo "excluded.txt" > "$contextdir/.dockerignore"
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine
+RUN --mount=type=bind,target=/context test -f /context/excluded.txt
+EOF
+
+  BUILDAH_DISABLE_RUN_BIND_MOUNT_IGNORE=true \
+    run_buildah build --no-cache $WITH_POLICY_JSON "$contextdir"
+}
+
+@test "bud RUN bind mount CLI opt-out takes precedence over environment" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bind-mount-ignore-cli-precedence
+  mkdir -p "$contextdir"
+
+  echo "excluded" > "$contextdir/excluded.txt"
+  echo "excluded.txt" > "$contextdir/.dockerignore"
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine
+RUN --mount=type=bind,target=/context test -f /context/excluded.txt
+EOF
+
+  run env BUILDAH_DISABLE_RUN_BIND_MOUNT_IGNORE=true \
+    buildah build --no-cache --disable-run-bind-mount-ignore=false \
+    $WITH_POLICY_JSON "$contextdir"
+
+  assert "$status" -ne 0 "explicit CLI false should keep dockerignore filtering enabled"
+}
+
 @test "bud multi-platform --layers should create separate images for each platform" {
   _prefetch busybox
   local contextdir=${TEST_SCRATCH_DIR}/bud/multiplatform-layers

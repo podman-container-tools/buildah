@@ -451,4 +451,7 @@ type BuildOptions struct {
 	// Proxy controls how we retrieve HTTP or HTTPS build contexts and
 	// sources to ADD.
 	Proxy func(req *http.Request) (*url.URL, error)
+	// DisableRunBindMountIgnore disables filtering ignored paths from
+	// default-context RUN bind mounts.
+	DisableRunBindMountIgnore bool
 }

@@ -911,7 +911,9 @@ func (s *stageExecutor) Run(run imagebuilder.Run, config docker.Config) error {
 	}
 	runMounts := slices.Concat(run.Mounts, s.executor.transientRunMounts)
 
-	if len(s.executor.excludes) > 0 && hasDefaultContextBindMount(runMounts) {
+	if len(s.executor.excludes) > 0 &&
+		hasDefaultContextBindMount(runMounts) &&
+		!s.executor.disableRunBindMountIgnore {
 		if !s.executor.contextDirWritesAreDiscarded {
 			return fmt.Errorf("cannot filter ignored paths from a default RUN bind mount without a build-context overlay")
 		}
