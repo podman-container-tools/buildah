@@ -86,6 +86,9 @@ type executor struct {
 	store                          storage.Store
 	contextDir                     string
 	contextDirWritesAreDiscarded   bool
+	contextDirFilterLock           sync.Mutex
+	contextDirFiltered             bool
+	contextDirFilterErr            error
 	pullPolicy                     define.PullPolicy
 	registry                       string
 	ignoreUnrecognizedInstructions bool
