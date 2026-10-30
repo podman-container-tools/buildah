@@ -687,3 +687,100 @@ load helpers
   expect_output "1:1"
   run_buildah_umount ${cid}
 }
+
+@test "from-onbuild-copy-link" {
+  mkdir -p ${TEST_SCRATCH_DIR}/onbuild-src/dir
+  echo test > ${TEST_SCRATCH_DIR}/onbuild-src/dir/file1
+  echo test > ${TEST_SCRATCH_DIR}/onbuild-src/file2
+
+  run_buildah from --quiet $WITH_POLICY_JSON scratch
+  cid=$output
+  run_buildah config --onbuild "COPY --link=false dir/ /flat/" --onbuild "COPY --link file2 /file2" $cid
+  run_buildah commit $WITH_POLICY_JSON --format docker $cid onbuild-copy-more-flags
+  run_buildah rm $cid
+
+  pushd ${TEST_SCRATCH_DIR}/onbuild-src > /dev/null
+  run_buildah from --quiet --cidfile ${TEST_SCRATCH_DIR}/cid $WITH_POLICY_JSON onbuild-copy-more-flags
+  popd > /dev/null
+  cid=$(< ${TEST_SCRATCH_DIR}/cid)
+
+  run_buildah_mount ${cid}
+  root=$output
+  test -e ${root}/flat/file1
+  # --link content is queued as its own layer and only lands in the image at commit time
+  assert "$(test -e ${root}/file2 && echo present)" = "" "--link content should not be in the working container before commit"
+  run_buildah_umount ${cid}
+
+  run_buildah commit $WITH_POLICY_JSON --format docker $cid onbuild-copy-link-committed
+  run_buildah rm $cid
+  run_buildah from --quiet $WITH_POLICY_JSON onbuild-copy-link-committed
+  cid=$output
+  run_buildah_mount ${cid}
+  root=$output
+  test -e ${root}/flat/file1
+  test -e ${root}/file2
+  run_buildah_umount ${cid}
+}
+
+@test "from-onbuild-add-unpack" {
+  mkdir -p ${TEST_SCRATCH_DIR}/onbuild-src
+  echo test > ${TEST_SCRATCH_DIR}/inner.txt
+  tar -c -C ${TEST_SCRATCH_DIR} -f ${TEST_SCRATCH_DIR}/onbuild-src/archive.tar inner.txt
+
+  run_buildah from --quiet $WITH_POLICY_JSON scratch
+  cid=$output
+  run_buildah config --onbuild "ADD --unpack=false archive.tar /nounpack/" --onbuild "ADD --unpack=true archive.tar /unpack/" --onbuild "ADD archive.tar /default/" $cid
+  run_buildah commit $WITH_POLICY_JSON --format docker $cid onbuild-add-unpack
+  run_buildah rm $cid
+
+  pushd ${TEST_SCRATCH_DIR}/onbuild-src > /dev/null
+  run_buildah from --quiet --cidfile ${TEST_SCRATCH_DIR}/cid $WITH_POLICY_JSON onbuild-add-unpack
+  popd > /dev/null
+  cid=$(< ${TEST_SCRATCH_DIR}/cid)
+
+  run_buildah_mount ${cid}
+  root=$output
+  test -f ${root}/nounpack/archive.tar
+  assert "$(test -e ${root}/nounpack/inner.txt && echo present)" = "" "--unpack=false should leave the archive alone"
+  test -e ${root}/unpack/inner.txt
+  test -e ${root}/default/inner.txt
+  run_buildah_umount ${cid}
+}
+
+@test "from-onbuild-invalid-flag-value" {
+  while IFS='|' read -r spec msg; do
+    run_buildah from --quiet $WITH_POLICY_JSON scratch
+    cid=$output
+    run_buildah config --onbuild "$spec" $cid
+    run_buildah commit $WITH_POLICY_JSON --format docker $cid onbuild-bad-value
+    run_buildah rm $cid
+    run_buildah 125 from --quiet $WITH_POLICY_JSON onbuild-bad-value
+    expect_output --substring "$msg"
+    run_buildah rm --all
+    run_buildah rmi onbuild-bad-value
+  done <<'SPECS'
+COPY --link=maybe a /a|invalid value for --link
+ADD --keep-git-dir=maybe a /a|invalid value for --keep-git-dir
+ADD --unpack=maybe a /a|invalid value for --unpack
+SPECS
+}
+
+@test "from-onbuild-wrong-command-flag" {
+  while IFS='|' read -r spec msg; do
+    run_buildah from --quiet $WITH_POLICY_JSON scratch
+    cid=$output
+    run_buildah config --onbuild "$spec" $cid
+    run_buildah commit $WITH_POLICY_JSON --format docker $cid onbuild-wrong-flag
+    run_buildah rm $cid
+    run_buildah 125 from --quiet $WITH_POLICY_JSON onbuild-wrong-flag
+    expect_output --substring "$msg"
+    run_buildah rm --all
+    run_buildah rmi onbuild-wrong-flag
+  done <<'SPECS'
+COPY --parents a /a|unrecognized flag "--parents"
+COPY --keep-git-dir a /a|unrecognized flag "--keep-git-dir"
+COPY --unpack=true a /a|unrecognized flag "--unpack=true"
+ADD --unpack a /a|unrecognized flag "--unpack"
+COPY --exclude=foo a /a|unrecognized flag "--exclude=foo"
+SPECS
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"go.podman.io/buildah/pkg/cli"
 	"go.podman.io/buildah/pkg/parse"
 	"go.podman.io/common/pkg/auth"
+	"go.podman.io/image/v5/types"
 )
 
 type fromReply struct {
@@ -111,6 +113,19 @@ newer: only pull images when newer images exist on the registry than those in th
 	rootCmd.AddCommand(fromCommand)
 }
 
+// parseBoolFlag parses a flag "--name" or "--name=<bool>"
+func parseBoolFlag(flag, name string) (bool, error) {
+	val, found := strings.CutPrefix(flag, name+"=")
+	if !found {
+		return true, nil
+	}
+	b, err := strconv.ParseBool(val)
+	if err != nil {
+		return false, fmt.Errorf("invalid value for %s in onbuild command: %w", name, err)
+	}
+	return b, nil
+}
+
 func onBuild(ctx context.Context, builder *buildah.Builder, quiet bool) error {
 	ctr := 0
 	for _, onBuildSpec := range builder.OnBuild() {
@@ -131,6 +146,7 @@ func onBuild(ctx context.Context, builder *buildah.Builder, quiet bool) error {
 			}
 
 			var options buildah.AddAndCopyOptions
+			var err error
 			for len(args) > 0 && strings.HasPrefix(args[0], "--") {
 				flag := args[0]
 				switch {
@@ -140,6 +156,20 @@ func onBuild(ctx context.Context, builder *buildah.Builder, quiet bool) error {
 					options.Chmod = strings.TrimPrefix(flag, "--chmod=")
 				case command == "ADD" && strings.HasPrefix(flag, "--checksum="):
 					options.Checksum = strings.TrimPrefix(flag, "--checksum=")
+				case flag == "--link" || strings.HasPrefix(flag, "--link="):
+					if options.Link, err = parseBoolFlag(flag, "--link"); err != nil {
+						return err
+					}
+				case command == "ADD" && (flag == "--keep-git-dir" || strings.HasPrefix(flag, "--keep-git-dir=")):
+					if options.KeepGitDir, err = parseBoolFlag(flag, "--keep-git-dir"); err != nil {
+						return err
+					}
+				case command == "ADD" && strings.HasPrefix(flag, "--unpack="):
+					unpack, err := strconv.ParseBool(strings.TrimPrefix(flag, "--unpack="))
+					if err != nil {
+						return fmt.Errorf("invalid value for --unpack in onbuild command: %w", err)
+					}
+					options.Unpack = types.NewOptionalBool(unpack)
 				default:
 					return fmt.Errorf("unrecognized flag %q in onbuild command", flag)
 				}
