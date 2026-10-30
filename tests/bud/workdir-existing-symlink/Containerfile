@@ -1,0 +1,3 @@
+FROM alpine
+RUN mkdir -p /run/buildah-workdir-existing-test && rm -rf /var/run && ln -s /run /var/run
+WORKDIR /var/run/buildah-workdir-existing-test
