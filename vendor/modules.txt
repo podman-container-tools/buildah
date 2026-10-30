@@ -191,8 +191,8 @@ github.com/felixge/httpsnoop
 ## explicit; go 1.23
 github.com/fsnotify/fsnotify
 github.com/fsnotify/fsnotify/internal
-# github.com/fsouza/go-dockerclient v1.13.2
-## explicit; go 1.25.5
+# github.com/fsouza/go-dockerclient v1.13.3
+## explicit; go 1.26
 github.com/fsouza/go-dockerclient
 # github.com/go-jose/go-jose/v4 v4.1.6
 ## explicit; go 1.24.0
