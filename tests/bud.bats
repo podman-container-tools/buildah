@@ -275,6 +275,56 @@ _EOF
   expect_output "$want_output"
 }
 
+@test "bud and test --inherit-layer-annotations" {
+  local base_image=$(build_oci_image_with_layer_annotations \
+    '"test.annotation.first": "value1",' \
+    '"test.annotation.second": "value2"')
+
+  # Read the base image layer annotations for later verification.
+  run_buildah inspect --type=image --format '{{.Manifest}}' ${base_image}
+  local base_annotations=$(jq '[.layers[].annotations]' <<<"$output")
+  local base_layer_count=$(jq '.layers | length' <<<"$output")
+  local annotations_count=$(jq '[.layers[].annotations | select(. != null)] | length' <<<"$output")
+  assert "$annotations_count" -ge 1 "base image should have at least one layer with annotations"
+
+  # Prepare a derived Containerfile.
+  local contextdir=${TEST_SCRATCH_DIR}/context
+  mkdir -p $contextdir
+  touch $contextdir/testfile
+  cat > $contextdir/Containerfile << EOF
+FROM ${base_image}
+COPY testfile /
+EOF
+
+  # Build with --inherit-layer-annotations=true.
+  run_buildah build $WITH_POLICY_JSON --inherit-layer-annotations=true -t inherited $contextdir
+
+  # Verify that per-layer annotations are preserved with --inherit-layer-annotations=true.
+  run_buildah inspect --type=image --format '{{.Manifest}}' inherited
+  local committed_manifest="$output"
+  for ((i = 0; i < base_layer_count; i++)); do
+    local expected=$(jq -c ".[$i]" <<<"$base_annotations")
+    run jq -c ".layers[$i].annotations" <<<"$committed_manifest"
+    assert "$status" -eq 0 "jq failed parsing layer $i annotations"
+    assert "$output" = "$expected" \
+      "layer $i annotations should be preserved with --inherit-layer-annotations=true"
+  done
+
+  # Build with --inherit-layer-annotations=false.
+  run_buildah build $WITH_POLICY_JSON --inherit-layer-annotations=false -t stripped $contextdir
+
+  # Verify that per-layer annotations are stripped with --inherit-layer-annotations=false.
+  run_buildah inspect --type=image --format '{{.Manifest}}' stripped
+  committed_manifest="$output"
+  local layer_count=$(jq '.layers | length' <<<"$committed_manifest")
+  for ((i = 0; i < layer_count; i++)); do
+    run jq -c ".layers[$i].annotations" <<<"$committed_manifest"
+    assert "$status" -eq 0 "jq failed parsing layer $i annotations"
+    assert "$output" = "null" \
+      "layer $i should have no annotations with --inherit-layer-annotations=false"
+  done
+}
+
 @test "bud with no instructions but with CLI flags that require a new image be written" {
   _prefetch busybox
   local contextdir=${TEST_SCRATCH_DIR}/context
