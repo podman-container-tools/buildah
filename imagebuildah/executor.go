@@ -86,6 +86,10 @@ type executor struct {
 	store                          storage.Store
 	contextDir                     string
 	contextDirWritesAreDiscarded   bool
+	contextDirFilterLock           sync.Mutex
+	contextDirFiltered             bool
+	contextDirFilterErr            error
+	disableRunBindMountIgnore      bool
 	pullPolicy                     define.PullPolicy
 	registry                       string
 	ignoreUnrecognizedInstructions bool
@@ -293,6 +297,7 @@ func newExecutor(logger *logrus.Logger, logPrefix string, store storage.Store, o
 		store:                                   store,
 		contextDir:                              options.ContextDirectory,
 		contextDirWritesAreDiscarded:            contextWritesDiscarded,
+		disableRunBindMountIgnore:               options.DisableRunBindMountIgnore,
 		excludes:                                excludes,
 		groupAdd:                                options.GroupAdd,
 		ignoreFile:                              options.IgnoreFile,
