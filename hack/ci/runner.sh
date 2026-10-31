@@ -47,7 +47,9 @@ if [[ "$TEST" == "conformance" ]]; then
             die "conformance tests are not supported on fedora"
             ;;
         debian)
-            sudo dpkg -i /var/cache/download/containerd.io*.deb /var/cache/download/docker-ce*.deb
+            sudo dpkg -i /var/cache/download/containerd.io*.deb \
+                /var/cache/download/docker-ce*.deb \
+                /var/cache/download/docker-buildx-plugin*.deb
             ;;
     esac
     sudo systemctl start docker || true
