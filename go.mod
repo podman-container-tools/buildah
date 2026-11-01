@@ -26,7 +26,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runc v1.5.2
 	github.com/opencontainers/runtime-spec v1.3.0
-	github.com/opencontainers/runtime-tools v0.9.1-0.20260316125833-8a4db579f5c8
+	github.com/opencontainers/runtime-tools v0.9.1-0.20261017090856-bd3b0bd00f44
 	github.com/opencontainers/selinux v1.15.1
 	github.com/openshift/imagebuilder v1.2.23-0.20261006193608-c8afb7645103
 	github.com/pkg/sftp v1.13.12
