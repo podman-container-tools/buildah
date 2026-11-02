@@ -15,7 +15,7 @@ github.com/Azure/go-ansiterm/winterm
 ## explicit; go 1.18
 github.com/BurntSushi/toml
 github.com/BurntSushi/toml/internal
-# github.com/Microsoft/go-winio v0.6.3-0.20260930231756-f19d9717deb0
+# github.com/Microsoft/go-winio v0.6.3
 ## explicit; go 1.26.0
 github.com/Microsoft/go-winio
 github.com/Microsoft/go-winio/internal/fs
@@ -113,7 +113,7 @@ github.com/containerd/log
 # github.com/containerd/platforms v1.0.0-rc.5
 ## explicit; go 1.24
 github.com/containerd/platforms
-# github.com/containerd/stargz-snapshotter/estargz v0.19.0
+# github.com/containerd/stargz-snapshotter/estargz v0.19.1
 ## explicit; go 1.25.0
 github.com/containerd/stargz-snapshotter/estargz
 # github.com/containerd/typeurl/v2 v2.3.0
@@ -146,7 +146,7 @@ github.com/containers/ocicrypt/utils/keyprovider
 # github.com/coreos/go-systemd/v22 v22.7.0
 ## explicit; go 1.23
 github.com/coreos/go-systemd/v22/dbus
-# github.com/cyberphone/json-canonicalization v0.0.0-20241213102144-19d51d7fe467
+# github.com/cyberphone/json-canonicalization v0.0.0-20261011152517-32a48195b9b2
 ## explicit
 github.com/cyberphone/json-canonicalization/go/src/webpki.org/jsoncanonicalizer
 # github.com/cyphar/filepath-securejoin v0.7.0
@@ -173,7 +173,7 @@ github.com/distribution/reference
 ## explicit
 github.com/docker/distribution/registry/api/errcode
 github.com/docker/distribution/registry/api/v2
-# github.com/docker/docker-credential-helpers v0.9.10
+# github.com/docker/docker-credential-helpers v0.9.12
 ## explicit; go 1.21
 github.com/docker/docker-credential-helpers/client
 github.com/docker/docker-credential-helpers/credentials
@@ -194,7 +194,7 @@ github.com/fsnotify/fsnotify/internal
 # github.com/fsouza/go-dockerclient v1.13.3
 ## explicit; go 1.26
 github.com/fsouza/go-dockerclient
-# github.com/go-jose/go-jose/v4 v4.1.6
+# github.com/go-jose/go-jose/v4 v4.1.7
 ## explicit; go 1.24.0
 github.com/go-jose/go-jose/v4
 github.com/go-jose/go-jose/v4/cipher
@@ -250,7 +250,7 @@ github.com/klauspost/compress/internal/regmask
 github.com/klauspost/compress/internal/snapref
 github.com/klauspost/compress/zstd
 github.com/klauspost/compress/zstd/internal/xxhash
-# github.com/klauspost/pgzip v1.2.7
+# github.com/klauspost/pgzip v1.3.0
 ## explicit; go 1.25
 github.com/klauspost/pgzip
 # github.com/kr/fs v0.1.0
@@ -328,14 +328,14 @@ github.com/moby/sys/capability
 # github.com/moby/sys/devices v0.1.1
 ## explicit; go 1.24
 github.com/moby/sys/devices
-# github.com/moby/sys/mountinfo v0.7.2
-## explicit; go 1.17
+# github.com/moby/sys/mountinfo v0.7.3
+## explicit; go 1.18
 github.com/moby/sys/mountinfo
 # github.com/moby/sys/sequential v0.7.0
 ## explicit; go 1.24.0
 github.com/moby/sys/sequential
-# github.com/moby/sys/user v0.4.1
-## explicit; go 1.18
+# github.com/moby/sys/user v0.5.0
+## explicit; go 1.24
 github.com/moby/sys/user
 # github.com/moby/sys/userns v0.2.1
 ## explicit; go 1.21
@@ -475,7 +475,7 @@ github.com/vbatts/tar-split/tar/storage
 # github.com/vbauerster/cupwriter v0.0.5
 ## explicit; go 1.26.0
 github.com/vbauerster/cupwriter
-# github.com/vbauerster/mpb/v8 v8.16.2
+# github.com/vbauerster/mpb/v8 v8.16.3
 ## explicit; go 1.26.0
 github.com/vbauerster/mpb/v8
 github.com/vbauerster/mpb/v8/decor
@@ -532,7 +532,7 @@ go.opentelemetry.io/otel/trace
 go.opentelemetry.io/otel/trace/embedded
 go.opentelemetry.io/otel/trace/internal/telemetry
 go.opentelemetry.io/otel/trace/noop
-# go.podman.io/common v0.70.0
+# go.podman.io/common v0.70.1-0.20261104203703-22af5ab22557
 ## explicit; go 1.26.0
 go.podman.io/common/internal
 go.podman.io/common/libimage
@@ -580,7 +580,7 @@ go.podman.io/common/pkg/umask
 go.podman.io/common/pkg/util
 go.podman.io/common/pkg/version
 go.podman.io/common/version
-# go.podman.io/image/v5 v5.42.0
+# go.podman.io/image/v5 v5.42.1-0.20261104203703-22af5ab22557
 ## explicit; go 1.26.0
 go.podman.io/image/v5/copy
 go.podman.io/image/v5/directory
@@ -649,7 +649,7 @@ go.podman.io/image/v5/transports
 go.podman.io/image/v5/transports/alltransports
 go.podman.io/image/v5/types
 go.podman.io/image/v5/version
-# go.podman.io/storage v1.65.0
+# go.podman.io/storage v1.65.1-0.20261104203703-22af5ab22557
 ## explicit; go 1.26.0
 go.podman.io/storage
 go.podman.io/storage/drivers
@@ -708,7 +708,7 @@ go.podman.io/storage/types
 # go.yaml.in/yaml/v2 v2.4.4
 ## explicit; go 1.15
 go.yaml.in/yaml/v2
-# go.yaml.in/yaml/v3 v3.0.5
+# go.yaml.in/yaml/v3 v3.0.6
 ## explicit; go 1.16
 go.yaml.in/yaml/v3
 # golang.org/x/crypto v0.58.0
@@ -737,7 +737,7 @@ golang.org/x/crypto/ssh/agent
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
 golang.org/x/crypto/twofish
 golang.org/x/crypto/xts
-# golang.org/x/net v0.60.0
+# golang.org/x/net v0.61.0
 ## explicit; go 1.26.0
 golang.org/x/net/http/httpguts
 golang.org/x/net/http2
