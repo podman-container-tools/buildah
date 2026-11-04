@@ -9993,6 +9993,22 @@ EOF
   run_buildah build --no-cache $WITH_POLICY_JSON -t bind-mount-ignore-later-copy-add "$contextdir"
 }
 
+@test "bud RUN bind mount can disable dockerignore filtering" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bind-mount-ignore-opt-out
+  mkdir -p "$contextdir"
+
+  echo "excluded" > "$contextdir/excluded.txt"
+  echo "excluded.txt" > "$contextdir/.dockerignore"
+
+  cat > "$contextdir/Dockerfile" << EOF
+FROM alpine
+RUN --mount=type=bind,target=/context test -f /context/excluded.txt
+EOF
+
+  run_buildah build --no-cache --disable-run-bind-mount-ignore $WITH_POLICY_JSON "$contextdir"
+}
+
 @test "bud multi-platform --layers should create separate images for each platform" {
   _prefetch busybox
   local contextdir=${TEST_SCRATCH_DIR}/bud/multiplatform-layers
