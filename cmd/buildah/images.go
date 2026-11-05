@@ -358,7 +358,7 @@ func matchesReference(name, argName string) bool {
 	}
 	splitName := strings.Split(name, ":")
 	// If the arg contains a tag, we handle it differently than if it does not
-	if strings.Contains(argName, ":") {
+	if strings.Contains(argName, ":") && len(splitName) > 1 {
 		splitArg := strings.Split(argName, ":")
 		return strings.HasSuffix(splitName[0], splitArg[0]) && (splitName[1] == splitArg[1])
 	}
