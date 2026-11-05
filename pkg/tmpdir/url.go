@@ -112,22 +112,21 @@ func ForURL(ctx context.Context, dir, prefix, url string, options *URLOptions) (
 	return tempDir, relativeContextDir, nil
 }
 
-// parseGitBuildContext parses git build context to `repo`, `sub-dir`
-// `branch/commit`, accepts GitBuildContext in the format of
-// `repourl.git[#[branch-or-commit]:subdir]`.
+// parseGitBuildContext parses the git build context url to `repo`, `sub-dir` and
+// `branch/commit`. The given url must have format:
+//
+//	repourl.git[#[branch-or-commit][:subdir]]
 func parseGitBuildContext(url string) (string, string, string) {
-	gitSubdir := ""
-	gitBranch := ""
-	gitBranchPart := strings.Split(url, "#")
-	if len(gitBranchPart) > 1 {
-		// check if string contains path to a subdir
-		gitSubDirPart := strings.Split(gitBranchPart[1], ":")
-		if len(gitSubDirPart) > 1 {
-			gitSubdir = gitSubDirPart[1]
-		}
-		gitBranch = gitSubDirPart[0]
+	var revision, subdir string
+
+	url, fragment, ok := strings.Cut(url, "#")
+	if !ok {
+		return url, subdir, revision
 	}
-	return gitBranchPart[0], gitSubdir, gitBranch
+
+	revision, subdir, _ = strings.Cut(fragment, ":")
+
+	return url, subdir, revision
 }
 
 func cloneToDirectory(ctx context.Context, url, dir string) ([]byte, string, error) {
