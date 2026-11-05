@@ -11717,3 +11717,1149 @@ _EOF
 
   run_buildah build --network=none $WITH_POLICY_JSON -t test-unpack-no-slash $contextdir
 }
+
+@test "bake builds the default target from a JSON definition" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/default
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+LABEL bake-test=passed
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "default": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-test:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json"
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-test" }}' \
+    localhost/bake-test:latest
+
+  expect_output "passed"
+}
+
+@test "bake rejects invalid JSON definition" {
+  local config=${TEST_SCRATCH_DIR}/invalid-bake.json
+
+  # Deliberately missing the closing brace to test JSON parser error handling.
+  cat > "$config" << _EOF
+{
+  "target": {
+    "frontend": {}
+_EOF
+
+  run_buildah 125 bake -f "$config"
+  expect_output --substring "parsing Bake definition"
+}
+
+@test "bake rejects unknown target" {
+  local config=${TEST_SCRATCH_DIR}/unknown-target-bake.json
+
+  cat > "$config" << _EOF
+{
+  "target": {
+    "frontend": {
+      "context": ".",
+      "dockerfile": "Containerfile"
+    }
+  }
+}
+_EOF
+
+  run_buildah 125 bake -f "$config" unknown
+
+  expect_output --substring 'bake target "unknown" not found'
+}
+
+@test "bake builds targets selected through a group" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/group
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+LABEL bake-test=group
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "group": {
+    "release": {
+      "targets": ["frontend"]
+    }
+  },
+  "target": {
+    "frontend": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-group-test:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json" release
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-test" }}' \
+    localhost/bake-group-test:latest
+
+  expect_output "group"
+}
+
+@test "bake builds multiple targets selected through a group" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/multiple
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "group": {
+    "default": {
+      "targets": ["frontend", "backend"]
+    }
+  },
+  "target": {
+    "frontend": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-multiple-frontend:latest"]
+    },
+    "backend": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-multiple-backend:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json"
+
+  run_buildah 0 inspect --type image localhost/bake-multiple-frontend:latest
+  run_buildah 0 inspect --type image localhost/bake-multiple-backend:latest
+}
+
+@test "bake builds multiple explicitly requested targets" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/explicit
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "frontend": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-explicit-frontend:latest"]
+    },
+    "backend": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-explicit-backend:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json" frontend backend
+
+  run_buildah 0 inspect --type image localhost/bake-explicit-frontend:latest
+  run_buildah 0 inspect --type image localhost/bake-explicit-backend:latest
+}
+
+@test "bake builds a target only once when selected through multiple groups" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/duplicate
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "group": {
+    "first": {
+      "targets": ["frontend"]
+    },
+    "second": {
+      "targets": ["frontend"]
+    }
+  },
+  "target": {
+    "frontend": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-duplicate-frontend:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json" first second
+
+  local build_count
+  build_count=$(printf '%s\n' "$output" |
+    awk '/COMMIT localhost\/bake-duplicate-frontend:latest/ { count++ }
+      END { print count + 0 }')
+
+  [[ "$build_count" -eq 1 ]]
+}
+
+@test "bake passes build arguments and target stage to the build" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/args-target
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch AS base
+LABEL bake-stage=base
+
+FROM scratch AS selected
+ARG BAKE_VALUE
+LABEL bake-stage=selected
+LABEL bake-value=\${BAKE_VALUE}
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "default": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "target": "selected",
+      "args": {
+        "BAKE_VALUE": "passed"
+      },
+      "tags": ["localhost/bake-args-target:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json"
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-stage" }}' \
+    localhost/bake-args-target:latest
+  expect_output "selected"
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-value" }}' \
+    localhost/bake-args-target:latest
+  expect_output "passed"
+}
+
+@test "bake leaves null build arguments unset" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/null-args
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+ARG BAKE_VALUE=containerfile-default
+LABEL bake-value=\${BAKE_VALUE}
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "default": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "args": {
+        "BAKE_VALUE": null
+      },
+      "tags": ["localhost/bake-null-args:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json"
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-value" }}' \
+    localhost/bake-null-args:latest
+
+  expect_output "containerfile-default"
+}
+
+@test "bake resolves relative context and Dockerfile paths" {
+  # Bake resolves relative context paths from the working directory,
+  # and Dockerfile paths relative to the target's context.
+  # https://docs.docker.com/build/bake/targets/#target-properties
+  local contextdir=${TEST_SCRATCH_DIR}/bake/relative-paths
+  mkdir -p "$contextdir/context/nested"
+
+  cat > "$contextdir/context/nested/Containerfile" << _EOF
+FROM scratch
+LABEL bake-test=relative-paths
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "default": {
+      "context": "context",
+      "dockerfile": "nested/Containerfile",
+      "tags": ["localhost/bake-relative-paths:latest"]
+    }
+  }
+}
+_EOF
+
+  cd "$contextdir"
+
+  run_buildah bake -f "$contextdir/docker-bake.json"
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-test" }}' \
+    localhost/bake-relative-paths:latest
+
+  expect_output "relative-paths"
+}
+
+@test "bake inherits target configuration" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/inherits
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+ARG BAKE_VALUE
+LABEL bake-test=\$BAKE_VALUE
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "base": {
+      "context": "$contextdir",
+      "args": {
+        "BAKE_VALUE": "inherited"
+      }
+    },
+    "default": {
+      "inherits": ["base"],
+      "tags": ["localhost/bake-inherits:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json"
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-test" }}' \
+    localhost/bake-inherits:latest
+
+  expect_output "inherited"
+}
+
+@test "bake builds targets selected through nested groups" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/nested-groups
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+LABEL bake-test=nested-group
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "group": {
+    "release": {
+      "targets": ["production"]
+    },
+    "production": {
+      "targets": ["frontend"]
+    }
+  },
+  "target": {
+    "frontend": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-nested-group:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json" release
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-test" }}' \
+    localhost/bake-nested-group:latest
+
+  expect_output "nested-group"
+}
+
+@test "bake rejects cyclic group references" {
+  local config=${TEST_SCRATCH_DIR}/cyclic-groups-bake.json
+
+  cat > "$config" << _EOF
+{
+  "group": {
+    "first": {
+      "targets": ["second"]
+    },
+    "second": {
+      "targets": ["first"]
+    }
+  },
+  "target": {
+    "frontend": {
+      "context": "."
+    }
+  }
+}
+_EOF
+
+  run_buildah 125 bake -f "$config" first
+
+  expect_output --substring 'bake group "first" has a cycle'
+}
+
+@test "bake child target overrides inherited build arguments" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/inherits-override
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+ARG BAKE_VALUE
+LABEL bake-value=\$BAKE_VALUE
+_EOF
+
+  # Bake merges inherited target attributes with the child target's
+  # attributes. The child value overrides the inherited value.
+  # https://docs.docker.com/build/bake/reference/#targetinherits
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "base": {
+      "context": "$contextdir",
+      "args": {
+        "BAKE_VALUE": "inherited"
+      }
+    },
+    "default": {
+      "inherits": ["base"],
+      "args": {
+        "BAKE_VALUE": "overridden"
+      },
+      "tags": ["localhost/bake-inherits-override:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json"
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-value" }}' \
+    localhost/bake-inherits-override:latest
+
+  expect_output "overridden"
+}
+
+@test "bake later inherited target takes precedence" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/inherits-parents
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+ARG BAKE_VALUE
+LABEL bake-value=\$BAKE_VALUE
+_EOF
+
+  # When multiple inherited targets define the same attribute, Bake gives
+  # precedence to the target appearing last in the inherits list.
+  # https://docs.docker.com/build/bake/reference/#targetinherits
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "first": {
+      "context": "$contextdir",
+      "args": {
+        "BAKE_VALUE": "first"
+      }
+    },
+    "second": {
+      "args": {
+        "BAKE_VALUE": "second"
+      }
+    },
+    "default": {
+      "inherits": ["first", "second"],
+      "tags": ["localhost/bake-inherits-parents:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json"
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-value" }}' \
+    localhost/bake-inherits-parents:latest
+
+  expect_output "second"
+}
+
+@test "bake child null build argument overrides inherited value" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/inherits-null-args
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+ARG BAKE_VALUE=containerfile-default
+LABEL bake-value=\$BAKE_VALUE
+_EOF
+
+  # A null build-argument value leaves the argument unset. This overrides
+  # the inherited value, allowing the Containerfile's ARG default to apply.
+  # https://docs.docker.com/build/bake/reference/#targetargs
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "base": {
+      "context": "$contextdir",
+      "args": {
+        "BAKE_VALUE": "inherited"
+      }
+    },
+    "default": {
+      "inherits": ["base"],
+      "args": {
+        "BAKE_VALUE": null
+      },
+      "tags": ["localhost/bake-inherits-null-args:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json"
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-value" }}' \
+    localhost/bake-inherits-null-args:latest
+
+  expect_output "containerfile-default"
+}
+
+@test "bake rejects cyclic target inheritance" {
+  local config=${TEST_SCRATCH_DIR}/cyclic-target-inheritance-bake.json
+
+  # A target cannot finish resolving its inherited attributes if its
+  # inheritance chain loops back to itself. Bake should reject this cycle.
+  cat > "$config" << _EOF
+{
+  "target": {
+    "first": {
+      "inherits": ["second"]
+    },
+    "second": {
+      "inherits": ["first"]
+    },
+    "default": {
+      "inherits": ["first"]
+    }
+  }
+}
+_EOF
+
+  run_buildah 125 bake -f "$config"
+
+  expect_output --substring 'bake target "first" has an inheritance cycle'
+}
+
+@test "bake builds a target for the requested platform" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/platform
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+LABEL bake-test=platform
+_EOF
+
+  # Bake's platforms attribute selects the platform for the resulting image.
+  # https://docs.docker.com/build/bake/reference/#targetplatforms
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "default": {
+      "context": "$contextdir",
+      "platforms": ["linux/arm64"],
+      "tags": ["localhost/bake-platform:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json"
+
+  run_buildah 0 inspect --type image --format '{{.OCIv1.Architecture}}' \
+    localhost/bake-platform:latest
+
+  expect_output "arm64"
+}
+
+@test "bake uses explicitly configured Dockerfile when both files exist" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/dockerfile-explicit
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Dockerfile" << _EOF
+FROM scratch
+LABEL bake-test=dockerfile-explicit
+_EOF
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+LABEL bake-test=containerfile-default
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "default": {
+      "context": "$contextdir",
+      "dockerfile": "Dockerfile",
+      "tags": ["localhost/bake-dockerfile-explicit:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json"
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-test" }}' \
+    localhost/bake-dockerfile-explicit:latest
+
+  expect_output "dockerfile-explicit"
+}
+
+@test "bake interpolates variable defaults and references" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bake-variable-defaults
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" <<'EOF'
+FROM alpine
+ARG BAKE_VALUE
+LABEL bake-test="$BAKE_VALUE"
+EOF
+
+  cat > "$contextdir/docker-bake.json" <<'EOF'
+{
+  "variable": {
+    "BAKE_TEST_A": {
+      "default": "${BAKE_TEST_Z}"
+    },
+    "BAKE_TEST_Z": {
+      "default": "default"
+    }
+  },
+  "target": {
+    "default": {
+      "context": ".",
+      "dockerfile": "Containerfile",
+      "args": {
+        "BAKE_VALUE": "${BAKE_TEST_A}"
+      },
+      "tags": ["localhost/bake-variable-defaults:latest"]
+    }
+  }
+}
+EOF
+
+  (cd "$contextdir" && run_buildah 0 bake -f docker-bake.json)
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-test" }}' \
+    localhost/bake-variable-defaults:latest
+  expect_output "default"
+}
+
+@test "bake allows environment variables to override defaults" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bake-variable-environment
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" <<'EOF'
+FROM alpine
+ARG BAKE_VALUE
+LABEL bake-test="$BAKE_VALUE"
+EOF
+
+  cat > "$contextdir/docker-bake.json" <<'EOF'
+{
+  "variable": {
+    "BAKE_TEST_VALUE": {
+      "default": "default"
+    }
+  },
+  "target": {
+    "default": {
+      "context": ".",
+      "dockerfile": "Containerfile",
+      "args": {
+        "BAKE_VALUE": "${BAKE_TEST_VALUE}"
+      },
+      "tags": ["localhost/bake-variable-environment:latest"]
+    }
+  }
+}
+EOF
+
+  (
+    cd "$contextdir"
+    BAKE_TEST_VALUE=environment run_buildah 0 bake -f docker-bake.json
+  )
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-test" }}' \
+    localhost/bake-variable-environment:latest
+  expect_output "environment"
+}
+
+@test "bake can disable environment variable lookup" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bake-variable-disable-environment
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" <<'EOF'
+FROM alpine
+ARG BAKE_VALUE
+LABEL bake-test="$BAKE_VALUE"
+EOF
+
+  cat > "$contextdir/docker-bake.json" <<'EOF'
+{
+  "variable": {
+    "BAKE_TEST_VALUE": {
+      "default": "default"
+    }
+  },
+  "target": {
+    "default": {
+      "context": ".",
+      "dockerfile": "Containerfile",
+      "args": {
+        "BAKE_VALUE": "${BAKE_TEST_VALUE}"
+      },
+      "tags": ["localhost/bake-variable-disable-environment:latest"]
+    }
+  }
+}
+EOF
+
+  (
+    cd "$contextdir"
+    BUILDX_BAKE_DISABLE_VARS_ENV_LOOKUP=1 BAKE_TEST_VALUE=environment run_buildah 0 bake -f docker-bake.json
+  )
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-test" }}' \
+    localhost/bake-variable-disable-environment:latest
+  expect_output "default"
+}
+
+@test "bake preserves escaped variable references" {
+  _prefetch alpine
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bake-variable-escaped
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" <<'EOF'
+FROM alpine
+ARG BAKE_VALUE
+LABEL bake-test="$BAKE_VALUE"
+EOF
+
+  cat > "$contextdir/docker-bake.json" <<'EOF'
+{
+  "target": {
+    "default": {
+      "context": ".",
+      "dockerfile": "Containerfile",
+      "args": {
+        "BAKE_VALUE": "$${BAKE_TEST_VALUE}"
+      },
+      "tags": ["localhost/bake-variable-escaped:latest"]
+    }
+  }
+}
+EOF
+
+  (cd "$contextdir" && run_buildah 0 bake -f docker-bake.json)
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-test" }}' \
+    localhost/bake-variable-escaped:latest
+  expect_output '${BAKE_TEST_VALUE}'
+}
+
+@test "bake rejects invalid variable definitions and references" {
+  local contextdir=${TEST_SCRATCH_DIR}/bud/bake-variable-errors
+  mkdir -p "$contextdir"
+
+  # The variable has no default and is deliberately unset.
+  unset BAKE_TEST_MISSING
+  cat > "$contextdir/missing.json" <<'EOF'
+{
+  "variable": {
+    "BAKE_TEST_MISSING": {}
+  },
+  "target": {
+    "default": {
+      "args": {
+        "VALUE": "${BAKE_TEST_MISSING}"
+      }
+    }
+  }
+}
+EOF
+
+  run_buildah 125 bake -f "$contextdir/missing.json"
+  [[ "$output" == *'unknown Bake variable "BAKE_TEST_MISSING"'* ]]
+
+  cat > "$contextdir/unknown.json" <<'EOF'
+{
+  "target": {
+    "default": {
+      "args": {
+        "VALUE": "${BAKE_TEST_UNKNOWN}"
+      }
+    }
+  }
+}
+EOF
+
+  run_buildah 125 bake -f "$contextdir/unknown.json"
+  [[ "$output" == *'unknown Bake variable "BAKE_TEST_UNKNOWN"'* ]]
+
+  cat > "$contextdir/unsupported-type.json" <<'EOF'
+{
+  "variable": {
+    "BAKE_TEST_VALUE": {
+      "type": "number",
+      "default": "123"
+    }
+  },
+  "target": {
+    "default": {}
+  }
+}
+EOF
+
+  run_buildah 125 bake -f "$contextdir/unsupported-type.json"
+  [[ "$output" == *'only string variables are supported'* ]]
+
+  cat > "$contextdir/circular.json" <<'EOF'
+{
+  "variable": {
+    "BAKE_TEST_A": {
+      "default": "${BAKE_TEST_B}"
+    },
+    "BAKE_TEST_B": {
+      "default": "${BAKE_TEST_A}"
+    }
+  },
+  "target": {
+    "default": {}
+  }
+}
+EOF
+
+  run_buildah 125 bake -f "$contextdir/circular.json"
+  [[ "$output" == *'circular reference'* ]]
+}
+
+
+@test "bake selects the default group when a default target also exists" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/default-group-precedence
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+LABEL bake-test=frontend
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "group": {
+    "default": {
+      "targets": ["frontend"]
+    }
+  },
+  "target": {
+    "default": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-default-target:latest"]
+    },
+    "frontend": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-default-group-frontend:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json"
+
+  run_buildah 0 inspect --type image --format \
+    '{{ index .OCIv1.Config.Labels "bake-test" }}' \
+    localhost/bake-default-group-frontend:latest
+
+  expect_output "frontend"
+
+  run_buildah 125 inspect --type image localhost/bake-default-target:latest
+}
+
+@test "bake lists targets and groups without building" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/list-targets
+  mkdir -p "$contextdir"
+
+  # These contexts deliberately do not exist: --list must not attempt to build.
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "group": {
+    "default": {
+      "targets": ["frontend", "backend"]
+    },
+    "release": {
+      "description": "Release images",
+      "targets": ["backend"]
+    },
+    "_internal": {
+      "targets": ["backend"]
+    }
+  },
+  "target": {
+    "backend": {
+      "context": "$contextdir/missing-backend",
+      "description": "Build the backend"
+    },
+    "frontend": {
+      "context": "$contextdir/missing-frontend"
+    },
+    "_private": {
+      "context": "$contextdir/missing-private"
+    }
+  }
+}
+_EOF
+
+  run_buildah 0 bake --list=targets -f "$contextdir/docker-bake.json"
+
+  expect_output --substring "TARGET"
+  expect_output --substring "backend"
+  expect_output --substring "Build the backend"
+  expect_output --substring "default"
+  expect_output --substring "backend, frontend"
+  expect_output --substring 'Release images \(backend\)'
+
+  if [[ "$output" == *"_internal"* || "$output" == *"_private"* ]]; then
+    die "private Bake entries should not be listed"
+  fi
+}
+
+@test "bake rejects unsupported list types" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/list-invalid
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "frontend": {}
+  }
+}
+_EOF
+
+  run_buildah 125 bake --list=images -f "$contextdir/docker-bake.json"
+
+  expect_output --substring 'unsupported Bake list type "images"'
+}
+
+@test "bake selects multiple targets using a wildcard" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/wildcard-targets
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+LABEL bake-test=wildcard
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "frontend": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-wildcard-frontend:latest"]
+    },
+    "frontend-debug": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-wildcard-frontend-debug:latest"]
+    },
+    "backend": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-wildcard-backend:latest"]
+    }
+  }
+}
+_EOF
+
+  # Only targets matching the supplied pattern should be built.
+  run_buildah bake -f "$contextdir/docker-bake.json" 'frontend*'
+
+  run_buildah 0 inspect --type image localhost/bake-wildcard-frontend:latest
+  run_buildah 0 inspect --type image localhost/bake-wildcard-frontend-debug:latest
+  run_buildah 125 inspect --type image localhost/bake-wildcard-backend:latest
+}
+
+@test "bake selects targets using a single-character wildcard" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/wildcard-single-character
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+LABEL bake-test=wildcard-single-character
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "frontend": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-wildcard-question-frontend:latest"]
+    },
+    "frontent": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-wildcard-question-frontent:latest"]
+    },
+    "frontends": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-wildcard-question-frontends:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json" 'fronten?'
+
+  run_buildah 0 inspect --type image localhost/bake-wildcard-question-frontend:latest
+  run_buildah 0 inspect --type image localhost/bake-wildcard-question-frontent:latest
+  run_buildah 125 inspect --type image localhost/bake-wildcard-question-frontends:latest
+}
+
+@test "bake selects targets using a character-class wildcard" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/wildcard-character-class
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+LABEL bake-test=wildcard-character-class
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "frontend": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-wildcard-class-frontend:latest"]
+    },
+    "frontent": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-wildcard-class-frontent:latest"]
+    },
+    "frontand": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-wildcard-class-frontand:latest"]
+    },
+    "backend": {
+      "context": "$contextdir",
+      "dockerfile": "Containerfile",
+      "tags": ["localhost/bake-wildcard-class-backend:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json" 'fronten[dt]'
+
+  run_buildah 0 inspect --type image localhost/bake-wildcard-class-frontend:latest
+  run_buildah 0 inspect --type image localhost/bake-wildcard-class-frontent:latest
+  run_buildah 125 inspect --type image localhost/bake-wildcard-class-frontand:latest
+  run_buildah 125 inspect --type image localhost/bake-wildcard-class-backend:latest
+}
+
+@test "bake selects groups using a wildcard" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/wildcard-group
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/Containerfile" << _EOF
+FROM scratch
+LABEL bake-test=frontend
+_EOF
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "group": {
+    "release-frontend": {
+      "targets": ["frontend"]
+    }
+  },
+  "target": {
+    "frontend": {
+      "context": "$contextdir",
+      "tags": ["localhost/bake-wildcard-group:latest"]
+    }
+  }
+}
+_EOF
+
+  run_buildah bake -f "$contextdir/docker-bake.json" 'release*'
+
+  run_buildah inspect --format '{{index .Docker.Config.Labels "bake-test"}}' localhost/bake-wildcard-group:latest
+  expect_output "frontend"
+}
+@test "bake rejects invalid wildcard patterns" {
+  local contextdir=${TEST_SCRATCH_DIR}/bake/invalid-wildcard
+  mkdir -p "$contextdir"
+
+  cat > "$contextdir/docker-bake.json" << _EOF
+{
+  "target": {
+    "frontend": {}
+  }
+}
+_EOF
+
+  run_buildah 125 bake -f "$contextdir/docker-bake.json" 'frontend['
+  expect_output --substring 'syntax error in pattern'
+}
