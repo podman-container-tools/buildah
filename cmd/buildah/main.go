@@ -279,6 +279,7 @@ func main() {
 	mainInit()
 
 	addcopyInit()
+	bakeInit()
 	buildInit()
 	commitInit()
 	configInit()
