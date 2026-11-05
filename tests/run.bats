@@ -576,7 +576,10 @@ function configure_and_check_user() {
 	mkdir -p ${TEST_SCRATCH_DIR}/tmp
 	ln -s tmp ${TEST_SCRATCH_DIR}/tmp2
 	export TMPDIR=${TEST_SCRATCH_DIR}/tmp2
-	run_buildah run $cid id
+	# As rootless pasta is using TMPDIR for writing our requested pidfile
+	# but the security profiles will block this path by default. Because
+	# we do not care about testing pasta here use --network none.
+	run_buildah run --network none $cid id
 }
 
 @test "run --cap-add/--cap-drop" {
