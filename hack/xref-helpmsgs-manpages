@@ -212,14 +212,18 @@ sub tool_help {
         elsif ($section eq 'flags') {
             next if $line =~ /^\s+-h,\s+--help/;        # Ignore --help
 
-            # Handle '--foo' or '-f, --foo'
+            # Handle '--foo', '-f, --foo', or '--foo[=true|false]'
             if ($line =~ /^\s{1,10}(--\S+)\s/) {
-                print "> buildah @_ $1\n"                        if $debug;
-                $help{$1} = 1;
+                my $flag = $1;
+                $flag =~ s/\[=.*//;
+                print "> buildah @_ $flag\n"                     if $debug;
+                $help{$flag} = 1;
             }
             elsif ($line =~ /^\s{1,10}(-\S),\s+(--\S+)\s/) {
-                print "> buildah @_ $1, $2\n"                    if $debug;
-                $help{$1} = $help{$2} = 1;
+                my ($short, $long) = ($1, $2);
+                $long =~ s/\[=.*//;
+                print "> buildah @_ $short, $long\n"             if $debug;
+                $help{$short} = $help{$long} = 1;
             }
         }
     }
