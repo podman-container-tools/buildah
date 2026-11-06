@@ -30,6 +30,7 @@ import (
 	internalParse "go.podman.io/buildah/internal/parsevolume"
 	"go.podman.io/buildah/internal/sbom"
 	"go.podman.io/buildah/internal/tmpdir"
+	"go.podman.io/buildah/pkg/buildoutput"
 	"go.podman.io/buildah/pkg/sshagent"
 	"go.podman.io/common/libnetwork/etchosts"
 	"go.podman.io/common/pkg/auth"
@@ -738,72 +739,35 @@ func AuthConfig(creds string) (*types.DockerAuthConfig, error) {
 }
 
 // GetBuildOutput is responsible for parsing custom build output argument i.e `build --output` flag.
-// Takes `buildOutput` as string and returns BuildOutputOption
-// This function will read an argument of `type=tar` as "output in a local folder names type=tar"
-//
-// Deprecated: This function is now internal
+// Takes `buildOutput` as string and returns define.BuildOutputOption.
+// New callers should prefer go.podman.io/buildah/pkg/buildoutput.GetBuildOutput.
 func GetBuildOutput(buildOutput string) (define.BuildOutputOption, error) {
-	if buildOutput == "-" {
-		// Feature parity with buildkit, output tar to stdout
-		// Read more here: https://docs.docker.com/engine/reference/commandline/build/#custom-build-outputs
+	opt, err := buildoutput.GetBuildOutput(buildOutput)
+	if err != nil {
+		return define.BuildOutputOption{}, err
+	}
+	switch opt.Type {
+	case buildoutput.TypeStdout:
 		return define.BuildOutputOption{
 			Path:     "",
 			IsDir:    false,
 			IsStdout: true,
 		}, nil
-	}
-	if !strings.Contains(buildOutput, ",") {
-		// expect default --output <dirname>
+	case buildoutput.TypeLocalDir:
 		return define.BuildOutputOption{
-			Path:     buildOutput,
+			Path:     opt.Path,
 			IsDir:    true,
 			IsStdout: false,
 		}, nil
+	case buildoutput.TypeTar:
+		return define.BuildOutputOption{
+			Path:     opt.Path,
+			IsDir:    false,
+			IsStdout: false,
+		}, nil
+	default:
+		return define.BuildOutputOption{}, fmt.Errorf("invalid build output type %q", opt.Type)
 	}
-	isDir := true
-	isStdout := false
-	typeSelected := ""
-	pathSelected := ""
-	for option := range strings.SplitSeq(buildOutput, ",") {
-		key, value, found := strings.Cut(option, "=")
-		if !found {
-			return define.BuildOutputOption{}, fmt.Errorf("invalid build output options %q, expected format key=value", buildOutput)
-		}
-		switch key {
-		case "type":
-			if typeSelected != "" {
-				return define.BuildOutputOption{}, fmt.Errorf("duplicate %q not supported", key)
-			}
-			typeSelected = value
-			switch typeSelected {
-			case "local":
-				isDir = true
-			case "tar":
-				isDir = false
-			default:
-				return define.BuildOutputOption{}, fmt.Errorf("invalid type %q selected for build output options %q", value, buildOutput)
-			}
-		case "dest":
-			if pathSelected != "" {
-				return define.BuildOutputOption{}, fmt.Errorf("duplicate %q not supported", key)
-			}
-			pathSelected = value
-		default:
-			return define.BuildOutputOption{}, fmt.Errorf("unrecognized key %q in build output option: %q", key, buildOutput)
-		}
-	}
-
-	if typeSelected == "" || pathSelected == "" {
-		return define.BuildOutputOption{}, fmt.Errorf(`invalid build output option %q, accepted keys are "type" and "dest" must be present`, buildOutput)
-	}
-
-	if pathSelected == "-" {
-		if isDir {
-			return define.BuildOutputOption{}, fmt.Errorf(`invalid build output option %q, "type=local" can not be used with "dest=-"`, buildOutput)
-		}
-	}
-
-	return define.BuildOutputOption{Path: pathSelected, IsDir: isDir, IsStdout: isStdout}, nil
 }
 
 // TeeType parses a string value and returns a TeeType

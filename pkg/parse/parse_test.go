@@ -338,6 +338,7 @@ func TestGetBuildOutput(t *testing.T) {
 		description string
 		input       string
 		output      define.BuildOutputOption
+		expectErr   bool
 	}{
 		{
 			description: "hyphen",
@@ -362,10 +363,46 @@ func TestGetBuildOutput(t *testing.T) {
 				Path:  "/tmp",
 			},
 		},
+		{
+			description: "tar-file",
+			input:       "type=tar,dest=/tmp/out.tar",
+			output: define.BuildOutputOption{
+				IsDir:    false,
+				IsStdout: false,
+				Path:     "/tmp/out.tar",
+			},
+		},
+		{
+			description: "tar-stdout",
+			input:       "type=tar,dest=-",
+			output: define.BuildOutputOption{
+				IsDir:    false,
+				IsStdout: true,
+			},
+		},
+		{
+			description: "tar-missing-dest",
+			input:       "type=tar",
+			expectErr:   true,
+		},
+		{
+			description: "local-stdout",
+			input:       "type=local,dest=-",
+			expectErr:   true,
+		},
+		{
+			description: "invalid-type",
+			input:       "type=wrong,dest=/tmp",
+			expectErr:   true,
+		},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.description, func(t *testing.T) {
 			result, err := GetBuildOutput(testCase.input)
+			if testCase.expectErr {
+				assert.Error(t, err, "expected error for %q", testCase.input)
+				return
+			}
 			require.NoErrorf(t, err, "expected to be able to parse %q", testCase.input)
 			assert.Equal(t, testCase.output, result)
 		})
