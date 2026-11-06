@@ -4263,7 +4263,7 @@ EOF
 @test "bud with --cpu-shares flag, no argument" {
   target=bud-flag
   run_buildah 125 build --cpu-shares $WITH_POLICY_JSON -t ${target} -f $BUDFILES/from-scratch/Containerfile $BUDFILES/from-scratch
-  expect_output --substring "invalid argument .* invalid syntax"
+  expect_output --substring "invalid argument .* must be a non-negative integer"
 }
 
 @test "bud with --cpu-shares flag, invalid argument" {
@@ -4281,7 +4281,7 @@ EOF
 @test "bud with --cpu-shares short flag (-c), no argument" {
   target=bud-flag
   run_buildah 125 build -c $WITH_POLICY_JSON -t ${target} -f $BUDFILES/from-scratch/Containerfile $BUDFILES/from-scratch
-  expect_output --substring "invalid argument .* invalid syntax"
+  expect_output --substring "invalid argument .* must be a non-negative integer"
 }
 
 @test "bud with --cpu-shares short flag (-c), invalid argument" {
