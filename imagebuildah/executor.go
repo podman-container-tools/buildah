@@ -180,7 +180,7 @@ type executor struct {
 	unsetAnnotations                        []string
 	processLabel                            string   // processLabel to assign to all RUN instructions
 	mountLabel                              string   // mountLabel to assign for all containers in all stages
-	buildOutputs                            []string // values for internal/output.GetBuildOutput()
+	buildOutputs                            []string // values for pkg/output.GetBuildOutput()
 	osVersion                               string
 	osFeatures                              []string
 	envs                                    []string

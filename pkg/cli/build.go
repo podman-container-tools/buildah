@@ -24,7 +24,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"go.podman.io/buildah/define"
-	"go.podman.io/buildah/internal/output"
+	"go.podman.io/buildah/pkg/output"
 	"go.podman.io/buildah/pkg/parse"
 	"go.podman.io/buildah/pkg/tmpdir"
 	"go.podman.io/buildah/pkg/util"

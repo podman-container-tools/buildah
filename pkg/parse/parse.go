@@ -741,7 +741,7 @@ func AuthConfig(creds string) (*types.DockerAuthConfig, error) {
 // Takes `buildOutput` as string and returns BuildOutputOption
 // This function will read an argument of `type=tar` as "output in a local folder names type=tar"
 //
-// Deprecated: This function is now internal
+// Deprecated: Use go.podman.io/buildah/pkg/output.GetBuildOutput instead.
 func GetBuildOutput(buildOutput string) (define.BuildOutputOption, error) {
 	if buildOutput == "-" {
 		// Feature parity with buildkit, output tar to stdout
