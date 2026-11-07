@@ -278,9 +278,16 @@ github.com/miekg/pkcs11
 github.com/mistifyio/go-zfs/v4
 # github.com/moby/buildkit v0.34.2
 ## explicit; go 1.26.8
+github.com/moby/buildkit/api/services/control
+github.com/moby/buildkit/api/types
 github.com/moby/buildkit/frontend/dockerfile/command
 github.com/moby/buildkit/frontend/dockerfile/parser
 github.com/moby/buildkit/frontend/dockerfile/shell
+github.com/moby/buildkit/solver/pb
+github.com/moby/buildkit/sourcepolicy/pb
+github.com/moby/buildkit/util/apicaps
+github.com/moby/buildkit/util/apicaps/pb
+github.com/moby/buildkit/util/gogo/proto
 github.com/moby/buildkit/util/stack
 # github.com/moby/docker-image-spec v1.3.1
 ## explicit; go 1.18
@@ -403,6 +410,7 @@ github.com/pkg/sftp/internal/encoding/ssh/filexfer/openssh
 # github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10
 ## explicit; go 1.20
 github.com/planetscale/vtprotobuf/protohelpers
+github.com/planetscale/vtprotobuf/types/known/timestamppb
 # github.com/proglottis/gpgme v0.1.6
 ## explicit; go 1.17
 github.com/proglottis/gpgme
