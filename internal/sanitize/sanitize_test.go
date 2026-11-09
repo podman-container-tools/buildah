@@ -374,19 +374,19 @@ func TestSanitizeImageName(t *testing.T) {
 	// sanitize them all
 	goodLayoutRel, err := filepath.Rel(contextDir, goodLayout)
 	require.NoErrorf(t, err, "converting absolute path %q to a relative one", goodLayout)
-	newGoodLayout, err := ImageName(store, "oci", goodLayoutRel, contextDir, t.TempDir())
+	newGoodLayout, err := ImageName(store, "oci", goodLayoutRel, contextDir, t.TempDir(), false)
 	require.NoError(t, err, "sanitizing good OCI layout")
 	goodDirRel, err := filepath.Rel(contextDir, goodDir)
 	require.NoErrorf(t, err, "converting absolute path %q to a relative one", goodDir)
-	newGoodDir, err := ImageName(store, "dir", goodDirRel, contextDir, t.TempDir())
+	newGoodDir, err := ImageName(store, "dir", goodDirRel, contextDir, t.TempDir(), false)
 	require.NoError(t, err, "sanitizing good directory")
 	goodOCIArchiveRel, err := filepath.Rel(contextDir, goodOCIArchive)
 	require.NoErrorf(t, err, "converting absolute path %q to a relative one", goodOCIArchive)
-	newGoodOCIArchive, err := ImageName(store, "oci-archive", goodOCIArchiveRel, contextDir, t.TempDir())
+	newGoodOCIArchive, err := ImageName(store, "oci-archive", goodOCIArchiveRel, contextDir, t.TempDir(), false)
 	require.NoError(t, err, "sanitizing good OCI archive")
 	goodDockerArchiveRel, err := filepath.Rel(contextDir, goodDockerArchive)
 	require.NoErrorf(t, err, "converting absolute path %q to a relative one", goodDockerArchive)
-	newGoodDockerArchive, err := ImageName(store, "docker-archive", goodDockerArchiveRel, contextDir, t.TempDir())
+	newGoodDockerArchive, err := ImageName(store, "docker-archive", goodDockerArchiveRel, contextDir, t.TempDir(), false)
 	require.NoError(t, err, "sanitizing good docker archive")
 
 	// make sure the sanitized versions can all be read without error
@@ -399,24 +399,45 @@ func TestSanitizeImageName(t *testing.T) {
 	badLayout := mutateDirectory(t, contextDir, goodLayout, filepath.Join(v1.ImageBlobsDir, blobDigest.Algorithm().String(), blobDigest.Encoded()))
 	badLayoutRel, err := filepath.Rel(contextDir, badLayout)
 	require.NoErrorf(t, err, "converting absolute path %q to a relative one", badLayout)
-	_, err = ImageName(store, "oci", badLayoutRel, contextDir, t.TempDir())
+	_, err = ImageName(store, "oci", badLayoutRel, contextDir, t.TempDir(), false)
 	require.ErrorIs(t, err, os.ErrNotExist, "sanitizing bad OCI layout")
 
 	badDir := mutateDirectory(t, contextDir, goodDir, blobDigest.Encoded())
 	badDirRel, err := filepath.Rel(contextDir, badDir)
 	require.NoErrorf(t, err, "converting absolute path %q to a relative one", badDir)
-	_, err = ImageName(store, "dir", badDirRel, contextDir, t.TempDir())
+	_, err = ImageName(store, "dir", badDirRel, contextDir, t.TempDir(), false)
 	require.ErrorIs(t, err, os.ErrNotExist, "sanitizing bad directory")
 
 	badOCIArchive := mutateArchive(t, contextDir, goodOCIArchive, filepath.Join(v1.ImageBlobsDir, blobDigest.Algorithm().String(), blobDigest.Encoded()))
 	badOCIArchiveRel, err := filepath.Rel(contextDir, badOCIArchive)
 	require.NoErrorf(t, err, "converting absolute path %q to a relative one", badOCIArchive)
-	_, err = ImageName(store, "oci-archive", badOCIArchiveRel, contextDir, t.TempDir())
+	_, err = ImageName(store, "oci-archive", badOCIArchiveRel, contextDir, t.TempDir(), false)
 	require.ErrorContains(t, err, "invalid symbolic link", "sanitizing bad oci archive")
 
 	badDockerArchive := mutateArchive(t, contextDir, goodDockerArchive, diffDigest.Encoded()+".tar")
 	badDockerArchiveRel, err := filepath.Rel(contextDir, badDockerArchive)
 	require.NoErrorf(t, err, "converting absolute path %q to a relative one", badDockerArchive)
-	_, err = ImageName(store, "docker-archive", badDockerArchiveRel, contextDir, t.TempDir())
+	_, err = ImageName(store, "docker-archive", badDockerArchiveRel, contextDir, t.TempDir(), false)
 	require.ErrorContains(t, err, "invalid symbolic link", "sanitizing bad docker archive")
+
+	// sanitize with absolute paths (simulating --from CLI flag)
+	// For archives, the file is read directly and still sanitized.
+	// For directories, the absolute path is returned as-is.
+	newAbsOCIArchive, err := ImageName(store, "oci-archive", goodOCIArchive, contextDir, t.TempDir(), true)
+	require.NoError(t, err, "sanitizing absolute OCI archive path")
+	requireImageReadable(t, newAbsOCIArchive)
+
+	newAbsDockerArchive, err := ImageName(store, "docker-archive", goodDockerArchive, contextDir, t.TempDir(), true)
+	require.NoError(t, err, "sanitizing absolute docker archive path")
+	requireImageReadable(t, newAbsDockerArchive)
+
+	newAbsLayout, err := ImageName(store, "oci", goodLayout, contextDir, t.TempDir(), true)
+	require.NoError(t, err, "sanitizing absolute OCI layout path")
+	assert.Equal(t, "oci:"+goodLayout, newAbsLayout)
+	requireImageReadable(t, newAbsLayout)
+
+	newAbsDir, err := ImageName(store, "dir", goodDir, contextDir, t.TempDir(), true)
+	require.NoError(t, err, "sanitizing absolute directory path")
+	assert.Equal(t, "dir:"+goodDir, newAbsDir)
+	requireImageReadable(t, newAbsDir)
 }
