@@ -41,7 +41,7 @@ require (
 	go.podman.io/image/v5 v5.42.1-0.20261106175359-39ea91d0042a
 	go.podman.io/storage v1.65.1-0.20261106175359-39ea91d0042a
 	golang.org/x/crypto v0.58.0
-	golang.org/x/sync v0.24.0
+	golang.org/x/sync v0.25.0
 	golang.org/x/sys v0.50.0
 	golang.org/x/term v0.47.0
 	google.golang.org/grpc v1.85.0
