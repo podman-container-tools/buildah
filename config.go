@@ -694,6 +694,7 @@ func (b *Builder) Healthcheck() *docker.HealthConfig {
 	if b.Docker.Config.Healthcheck == nil {
 		return nil
 	}
+
 	return &docker.HealthConfig{
 		Test:          slices.Clone(b.Docker.Config.Healthcheck.Test),
 		Interval:      b.Docker.Config.Healthcheck.Interval,
@@ -708,22 +709,22 @@ func (b *Builder) Healthcheck() *docker.HealthConfig {
 // running container based on this image is "healthy", along with information
 // specifying how often that test should be run, and how many times the test
 // should fail before the container should be considered unhealthy.
-// Note: this setting is not present in the OCIv1 image format, so it is
-// discarded when writing images using OCIv1 formats.
+// Note: Although the OCIv1 image format does not define healthchecks, this
+// implementation preserves them when writing images in OCIv1 format.
 func (b *Builder) SetHealthcheck(config *docker.HealthConfig) {
 	b.Docker.Config.Healthcheck = nil
-	if config != nil {
-		if b.Format != define.Dockerv2ImageManifest {
-			b.Logger.Warnf("HEALTHCHECK is not supported for OCI image format and will be ignored. Must use `docker` format")
-		}
-		b.Docker.Config.Healthcheck = &docker.HealthConfig{
-			Test:          slices.Clone(config.Test),
-			Interval:      config.Interval,
-			Timeout:       config.Timeout,
-			StartPeriod:   config.StartPeriod,
-			StartInterval: config.StartInterval,
-			Retries:       config.Retries,
-		}
+
+	if config == nil {
+		return
+	}
+
+	b.Docker.Config.Healthcheck = &docker.HealthConfig{
+		Test:          slices.Clone(config.Test),
+		Interval:      config.Interval,
+		Timeout:       config.Timeout,
+		StartPeriod:   config.StartPeriod,
+		StartInterval: config.StartInterval,
+		Retries:       config.Retries,
 	}
 }
 
