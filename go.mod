@@ -38,8 +38,8 @@ require (
 	github.com/tonistiigi/dchapes-mode v0.0.0-20250318174251-73d941a28323
 	go.etcd.io/bbolt v1.5.0
 	go.podman.io/common v0.70.0
-	go.podman.io/image/v5 v5.42.0
-	go.podman.io/storage v1.65.0
+	go.podman.io/image/v5 v5.42.1
+	go.podman.io/storage v1.65.1
 	golang.org/x/crypto v0.58.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/sys v0.50.0
