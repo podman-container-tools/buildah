@@ -2,6 +2,10 @@
 
 # Changelog
 
+## v1.43.6 (2026-11-11)
+
+    [release-1.43] Bump c/common v0.67.3, c/image v5.39.4, c/storage v1.62.3
+
 ## v1.43.5 (2026-10-12)
 
     copier: reject relative symlink escapes, only resolve absolute ones
