@@ -348,7 +348,7 @@ func (b *Builder) RunContext(ctx context.Context, command []string, options RunO
 	}
 
 	setupMaskedPaths(g, b.CommonBuildOpts)
-	setupReadOnlyPaths(g)
+	setupReadOnlyPaths(g, b.CommonBuildOpts)
 
 	setupTerminal(g, options.Terminal, options.TerminalSize)
 
@@ -1254,8 +1254,22 @@ nextMaskedPath:
 	}
 }
 
-func setupReadOnlyPaths(g *generate.Generator) {
+func setupReadOnlyPaths(g *generate.Generator, opts *define.CommonBuildOptions) {
+	if slices.Contains(opts.Unmasks, "all") {
+		return
+	}
+nextReadonlyPath:
 	for _, rp := range config.DefaultReadOnlyPaths {
+		for _, unmask := range opts.Unmasks {
+			match, err := filepath.Match(unmask, rp)
+			if err != nil {
+				logrus.Warnf("Invalid unmask pattern %q: %v", unmask, err)
+				continue
+			}
+			if match {
+				continue nextReadonlyPath
+			}
+		}
 		g.AddLinuxReadonlyPaths(rp)
 	}
 }
