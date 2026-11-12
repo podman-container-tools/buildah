@@ -46,7 +46,7 @@ require (
 	golang.org/x/term v0.48.0
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
-	tags.cncf.io/container-device-interface v1.1.1
+	tags.cncf.io/container-device-interface v1.1.2
 )
 
 require (
