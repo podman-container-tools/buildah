@@ -86,26 +86,44 @@ func TestWriteFileInRoot(t *testing.T) {
 
 func TestParseGitBuildContext(t *testing.T) {
 	t.Parallel()
-	// Tests with only repo
-	repo, subdir, branch := parseGitBuildContext("https://github.com/containers/repo.git")
-	assert.Equal(t, repo, "https://github.com/containers/repo.git")
-	assert.Equal(t, subdir, "")
-	assert.Equal(t, branch, "")
-	// Tests url with branch
-	repo, subdir, branch = parseGitBuildContext("https://github.com/containers/repo.git#main")
-	assert.Equal(t, repo, "https://github.com/containers/repo.git")
-	assert.Equal(t, subdir, "")
-	assert.Equal(t, branch, "main")
-	// Tests url with no branch and subdir
-	repo, subdir, branch = parseGitBuildContext("https://github.com/containers/repo.git#:mydir")
-	assert.Equal(t, repo, "https://github.com/containers/repo.git")
-	assert.Equal(t, subdir, "mydir")
-	assert.Equal(t, branch, "")
-	// Tests url with branch and subdir
-	repo, subdir, branch = parseGitBuildContext("https://github.com/containers/repo.git#main:mydir")
-	assert.Equal(t, repo, "https://github.com/containers/repo.git")
-	assert.Equal(t, subdir, "mydir")
-	assert.Equal(t, branch, "main")
+
+	t.Run("should parse url without fragment", func(t *testing.T) {
+		repo, subdir, branch := parseGitBuildContext("https://github.com/containers/repo.git")
+		assert.Equal(t, repo, "https://github.com/containers/repo.git")
+		assert.Equal(t, subdir, "")
+		assert.Equal(t, branch, "")
+	})
+
+	t.Run("should parse url with branch fragment", func(t *testing.T) {
+		repo, subdir, branch := parseGitBuildContext("https://github.com/containers/repo.git#main")
+		assert.Equal(t, repo, "https://github.com/containers/repo.git")
+		assert.Equal(t, subdir, "")
+		assert.Equal(t, branch, "main")
+	})
+
+	t.Run("should parse url with subdir fragment", func(t *testing.T) {
+		repo, subdir, branch := parseGitBuildContext("https://github.com/containers/repo.git#:mydir")
+		assert.Equal(t, repo, "https://github.com/containers/repo.git")
+		assert.Equal(t, subdir, "mydir")
+		assert.Equal(t, branch, "")
+	})
+
+	t.Run("should parse url with branch and subdir fragment", func(t *testing.T) {
+		repo, subdir, branch := parseGitBuildContext("https://github.com/containers/repo.git#main:mydir")
+		assert.Equal(t, repo, "https://github.com/containers/repo.git")
+		assert.Equal(t, subdir, "mydir")
+		assert.Equal(t, branch, "main")
+
+		repo, subdir, branch = parseGitBuildContext("https://github.com/containers/repo.git#main#branch:mydir")
+		assert.Equal(t, repo, "https://github.com/containers/repo.git")
+		assert.Equal(t, subdir, "mydir")
+		assert.Equal(t, branch, "main#branch")
+
+		repo, subdir, branch = parseGitBuildContext("https://github.com/containers/repo.git#main:my:dir")
+		assert.Equal(t, repo, "https://github.com/containers/repo.git")
+		assert.Equal(t, subdir, "my:dir")
+		assert.Equal(t, branch, "main")
+	})
 }
 
 func TestForURLFailedDownloadCleanup(t *testing.T) {
