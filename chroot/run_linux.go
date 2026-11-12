@@ -88,6 +88,8 @@ var (
 	}
 )
 
+var makeFlags uintptr = uintptr(unix.MS_UNBINDABLE | unix.MS_PRIVATE | unix.MS_SLAVE | unix.MS_SHARED | unix.MS_REC)
+
 func mountFlagNames(flags uintptr) []string {
 	var names []string
 	for flag, name := range mountFlagMap {
@@ -385,7 +387,7 @@ func makeReadOnly(mntpoint string, flags uintptr) error {
 	if fs.Flags&unix.ST_RDONLY == 0 {
 		// All callers currently pass MS_RDONLY in "flags", but in case they stop doing
 		// that at some point in the future...
-		if err := unix.Mount(mntpoint, mntpoint, "bind", flags|unix.MS_RDONLY|unix.MS_REMOUNT|unix.MS_BIND, ""); err != nil {
+		if err := unix.Mount(mntpoint, mntpoint, "bind", (flags|unix.MS_RDONLY|unix.MS_REMOUNT|unix.MS_BIND)&^makeFlags, ""); err != nil {
 			return fmt.Errorf("remounting %s in mount namespace read-only: %w", mntpoint, err)
 		}
 	}
@@ -440,7 +442,7 @@ func setupChrootBindMounts(spec *specs.Spec, bundlePath string) (undoBinds func(
 		return undoBinds, fmt.Errorf("checking if directory %q was bound read-only: %w", subDev, err)
 	}
 	if fs.Flags&unix.ST_RDONLY == 0 {
-		if err := unix.Mount(subDev, subDev, "bind", devFlags|unix.MS_REMOUNT|unix.MS_BIND, ""); err != nil {
+		if err := unix.Mount(subDev, subDev, "bind", (devFlags|unix.MS_REMOUNT|unix.MS_BIND)&^makeFlags, ""); err != nil {
 			return undoBinds, fmt.Errorf("remounting /dev in mount namespace read-only: %w", err)
 		}
 	}
@@ -642,7 +644,7 @@ func setupChrootBindMounts(spec *specs.Spec, bundlePath string) (undoBinds func(
 		if effectiveImportantFlags != expectedImportantFlags {
 			// Do a remount to try to get the desired flags to stick.
 			effectiveUnimportantFlags := uintptr(fs.Flags) & ^possibleImportantFlags
-			remountFlags := unix.MS_REMOUNT | bindFlags | requestFlags | mountFlagsForFSFlags(effectiveUnimportantFlags)
+			remountFlags := (unix.MS_REMOUNT | bindFlags | requestFlags | mountFlagsForFSFlags(effectiveUnimportantFlags)) &^ makeFlags
 			// If we are requesting a read-only mount, add any possibleImportantFlags present in fs.Flags to remountFlags.
 			if requestFlags&unix.ST_RDONLY == unix.ST_RDONLY {
 				remountFlags |= uintptr(fs.Flags) & possibleImportantFlags
@@ -701,7 +703,7 @@ func setupChrootBindMounts(spec *specs.Spec, bundlePath string) (undoBinds func(
 			return undoBinds, fmt.Errorf("checking if directory %q was bound read-only: %w", target, err)
 		}
 		if fs.Flags&unix.ST_RDONLY == 0 {
-			if err := unix.Mount(target, target, "", unix.MS_REMOUNT|unix.MS_RDONLY|bindFlags|mountFlagsForFSFlags(uintptr(fs.Flags)), ""); err != nil {
+			if err := unix.Mount(target, target, "", (unix.MS_REMOUNT|unix.MS_RDONLY|bindFlags|mountFlagsForFSFlags(uintptr(fs.Flags)))&^makeFlags, ""); err != nil {
 				return undoBinds, fmt.Errorf("remounting %q in mount namespace read-only: %w", target, err)
 			}
 		}
@@ -814,7 +816,7 @@ func setupChrootBindMounts(spec *specs.Spec, bundlePath string) (undoBinds func(
 					return undoBinds, fmt.Errorf("checking if masked directory %q was mounted read-only in mount namespace: %w", target, err)
 				}
 				if fs.Flags&unix.ST_RDONLY == 0 {
-					if err = unix.Mount(target, target, "", syscall.MS_REMOUNT|roFlags|mountFlagsForFSFlags(uintptr(fs.Flags)), ""); err != nil {
+					if err = unix.Mount(target, target, "", (syscall.MS_REMOUNT|roFlags|mountFlagsForFSFlags(uintptr(fs.Flags)))&^makeFlags, ""); err != nil {
 						return undoBinds, fmt.Errorf("making sure masked directory %q in mount namespace is read only: %w", target, err)
 					}
 				}
