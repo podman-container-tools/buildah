@@ -23,6 +23,8 @@ import (
 	"go.podman.io/image/v5/types"
 	"go.podman.io/storage"
 	"go.podman.io/storage/pkg/archive"
+	"go.podman.io/buildah/define"
+    "go.podman.io/buildah/docker"
 	storageTypes "go.podman.io/storage/types"
 )
 
@@ -658,4 +660,235 @@ func TestCommitChmod(t *testing.T) {
 		}
 		require.ErrorIs(t, err, io.EOF)
 	}
+}
+
+func TestSetHealthcheck(t *testing.T) {
+    formats := []struct {
+        name   string
+        format string
+    }{
+        {
+            name:   "Docker",
+            format: define.Dockerv2ImageManifest,
+        },
+        {
+            name:   "OCI",
+            format: define.OCIv1ImageManifest,
+        },
+    }
+
+    for _, tt := range formats {
+        t.Run(tt.name, func(t *testing.T) {
+            b := &Builder{
+                Format: tt.format,
+            }
+            b.Docker.Config = &docker.Config{}
+
+            input := &docker.HealthConfig{
+                Test:          []string{"CMD-SHELL", "true"},
+                Interval:      30 * time.Second,
+                Timeout:       5 * time.Second,
+                StartPeriod:   10 * time.Second,
+                StartInterval: 2 * time.Second,
+                Retries:       3,
+            }
+
+            b.SetHealthcheck(input)
+
+            require.Equal(t, input, b.Healthcheck())
+
+            // Modifying the original input must not affect the Builder.
+            input.Test[1] = "false"
+
+            require.Equal(t, []string{"CMD-SHELL", "true"}, b.Healthcheck().Test)
+
+            // Modifying the returned healthcheck must not affect the Builder.
+            returned := b.Healthcheck()
+            returned.Test[1] = "modified"
+
+            require.Equal(t, []string{"CMD-SHELL", "true"}, b.Healthcheck().Test)
+
+            // Setting nil must clear the existing healthcheck.
+            b.SetHealthcheck(nil)
+
+            require.Nil(t, b.Healthcheck())
+        })
+    }
+}
+
+func TestContainerImageRefHealthcheck(t *testing.T) {
+    overrideHealthcheck := &manifest.Schema2HealthConfig{
+        Test:     []string{"CMD", "overridden"},
+        Interval: 15 * time.Second,
+    }
+
+    expectedHealthcheck := &manifest.Schema2HealthConfig{
+        Test:          []string{"CMD-SHELL", "true"},
+        Interval:      30 * time.Second,
+        Timeout:       5 * time.Second,
+        StartPeriod:   10 * time.Second,
+        StartInterval: 2 * time.Second,
+        Retries:       3,
+    }
+
+    tests := []struct {
+        name                string
+        dconfig             string
+        overrideConfig      *manifest.Schema2Config
+        confidentialWorkload ConfidentialWorkloadOptions
+        want                *manifest.Schema2HealthConfig
+        wantErr             bool
+    }{
+        {
+            name: "config healthcheck",
+            dconfig: `{
+                "config": {
+                    "Healthcheck": {
+                        "Test": ["CMD-SHELL", "true"],
+                        "Interval": 30000000000,
+                        "Timeout": 5000000000,
+                        "StartPeriod": 10000000000,
+                        "StartInterval": 2000000000,
+                        "Retries": 3
+                    }
+                }
+            }`,
+            want: expectedHealthcheck,
+        },
+        {
+            name: "config takes precedence",
+            dconfig: `{
+                "config": {
+                    "Healthcheck": {"Test": ["CMD", "true"]}
+                },
+                "container_config": {
+                    "Healthcheck": {"Test": ["CMD", "false"]}
+                }
+            }`,
+            want: &manifest.Schema2HealthConfig{
+                Test: []string{"CMD", "true"},
+            },
+        },
+        {
+            name: "legacy container_config fallback",
+            dconfig: `{
+                "container_config": {
+                    "Healthcheck": {"Test": ["CMD", "legacy"]}
+                }
+            }`,
+            want: &manifest.Schema2HealthConfig{
+                Test: []string{"CMD", "legacy"},
+            },
+        },
+        {
+            name: "config exists without healthcheck",
+            dconfig: `{
+                "config": {},
+                "container_config": {
+                    "Healthcheck": {"Test": ["CMD", "legacy"]}
+                }
+            }`,
+            want: nil,
+        },
+        {
+            name: "no healthcheck",
+            dconfig: `{
+                "config": {},
+                "container_config": {}
+            }`,
+            want: nil,
+        },
+        {
+            name: "configuration override",
+            dconfig: `{
+                "config": {
+                    "Healthcheck": {"Test": ["CMD", "original"]}
+                }
+            }`,
+            overrideConfig: &manifest.Schema2Config{
+                Healthcheck: overrideHealthcheck,
+            },
+            want: overrideHealthcheck,
+        },
+        {
+            name: "confidential workload",
+            dconfig: `{
+                "config": {
+                    "Healthcheck": {"Test": ["CMD", "true"]}
+                }
+            }`,
+            confidentialWorkload: ConfidentialWorkloadOptions{
+                Convert: true,
+            },
+            want: nil,
+        },
+        {
+            name:    "invalid JSON",
+            dconfig: `{`,
+            wantErr: true,
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            ref := &containerImageRef{
+                dconfig:              []byte(tt.dconfig),
+                overrideConfig:       tt.overrideConfig,
+                confidentialWorkload: tt.confidentialWorkload,
+            }
+
+            got, err := ref.healthcheck()
+
+            if tt.wantErr {
+                require.Error(t, err)
+                require.Nil(t, got)
+                return
+            }
+
+            require.NoError(t, err)
+            require.Equal(t, tt.want, got)
+        })
+    }
+}
+
+func TestOCIManifestBuilderWithoutHealthcheck(t *testing.T) {
+    oimage := v1.Image{
+        Platform: v1.Platform{
+            Architecture: "amd64",
+            OS:           "linux",
+        },
+        Config: v1.ImageConfig{
+            User: "1000",
+            Cmd:  []string{"my-command"},
+        },
+        RootFS: v1.RootFS{
+            Type: "layers",
+        },
+    }
+
+    oconfig, err := json.Marshal(&oimage)
+    require.NoError(t, err)
+
+    ref := &containerImageRef{
+        dconfig: []byte(`{"config":{}}`),
+        oconfig: oconfig,
+    }
+
+    builder, err := ref.newOCIManifestBuilder()
+    require.NoError(t, err)
+
+    ociBuilder, ok := builder.(*ociManifestBuilder)
+    require.True(t, ok)
+
+    require.Nil(t, ociBuilder.healthcheck)
+
+    _, configBlob, err := ociBuilder.manifestAndConfig()
+    require.NoError(t, err)
+
+    // Without a healthcheck, the extended serializer must produce
+    // exactly the same config JSON as the ordinary OCI image.
+    expected, err := json.Marshal(&ociBuilder.oimage)
+    require.NoError(t, err)
+
+    require.Equal(t, expected, configBlob)
 }
