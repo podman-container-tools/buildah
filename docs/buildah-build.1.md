@@ -421,6 +421,16 @@ This is a Docker specific option to disable image verification to a Container
 registry and is not supported by Buildah.  This flag is a NOOP and provided
 solely for scripting compatibility.
 
+**--disable-run-bind-mount-ignore**
+
+Do not filter files excluded by the build context's .containerignore/.dockerignore file from
+default-context bind mounts used by RUN --mount=type=bind instructions.
+
+By default, Buildah filters these files from the bind mounts, matching BuildKit behaviour. This
+option restores the previous Buildah behaviour, allowing RUN instructions to access ignored files.
+
+This option does not affect bind mounts that explicitly specify a source using the `from` option.
+
 **--dns**=[]
 
 Set custom DNS servers.  Invalid if using **--dns** with **--network=none**.
@@ -1681,8 +1691,13 @@ are stored while pulling and pushing images.  Defaults to '/var/tmp'.
 
 If the .containerignore/.dockerignore file exists in the context directory,
 `buildah build` reads its contents. If both exist, then .containerignore is used.
-Use the `--ignorefile` flag to override the ignore file path location. Buildah uses the content to exclude files and directories from the context directory, when executing COPY and ADD directives in the Containerfile/Dockerfile.
-COPY and ADD also support **--exclude**; patterns are relative to the copy source.
+Use the `--ignorefile` flag to override the ignore file path location. Buildah
+uses the content to exclude files and directories from the context directory
+when executing COPY and ADD directives in the Containerfile/Dockerfile, and
+when making the default build context available to RUN bind mounts. The
+`--disable-run-bind-mount-ignore` option disables filtering for RUN bind mounts
+only; COPY and ADD continue to respect the ignore file. COPY and ADD also
+support **--exclude**; patterns are relative to the copy source.
 
 Users can specify a series of Unix shell globals in a
 .containerignore/.dockerignore file to identify files/directories to exclude.
