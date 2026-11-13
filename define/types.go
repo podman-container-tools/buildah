@@ -116,7 +116,7 @@ func (s Secret) ResolveValue() ([]byte, error) {
 }
 
 // BuildOutputOptions contains the outcome of parsing the value of a build --output flag
-// Deprecated: This structure is now internal
+// Deprecated: Use go.podman.io/buildah/pkg/output.BuildOutputOption instead.
 type BuildOutputOption struct {
 	Path     string // Only valid if !IsStdout
 	IsDir    bool
