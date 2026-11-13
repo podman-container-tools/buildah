@@ -11,6 +11,7 @@ PREFIX := /usr/local
 BINDIR := $(PREFIX)/bin
 BASHINSTALLDIR = $(PREFIX)/share/bash-completion/completions
 BUILDFLAGS := -tags "$(BUILDTAGS)"
+ASM_LDFLAGS := --build-id=none -nostdlib -zrelro
 BUILDAH := buildah
 SELINUXOPT ?= $(shell test -x /usr/sbin/selinuxenabled && selinuxenabled && echo -Z)
 SELINUXTYPE=container_runtime_exec_t
@@ -72,25 +73,100 @@ internal/mkcw/embed/entrypoint_arm64.gz: internal/mkcw/embed/entrypoint_arm64
 	gzip -k9nf $^
 internal/mkcw/embed/entrypoint_ppc64le.gz: internal/mkcw/embed/entrypoint_ppc64le
 	gzip -k9nf $^
+internal/mkcw/embed/entrypoint_riscv64.gz: internal/mkcw/embed/entrypoint_riscv64
+	gzip -k9nf $^
 internal/mkcw/embed/entrypoint_s390x.gz: internal/mkcw/embed/entrypoint_s390x
 	gzip -k9nf $^
 
-ifneq ($(shell $(AS) --version | grep -E 'x86_64-([^-]+-)?linux'),)
+# From the manual's pathsearch example
+find_as = $(firstword $(wildcard $(addsuffix /$(1),$(subst :, ,$(PATH)))) $(AS))
+find_ld = $(firstword $(wildcard $(addsuffix /$(1),$(subst :, ,$(PATH)))) $(LD))
+find_strip = $(firstword $(wildcard $(addsuffix /$(1),$(subst :, ,$(PATH)))) $(STRIP))
+AMD64_AS = $(call find_as,x86_64-*linux*-as)
+AMD64_LD = $(call find_ld,x86_64-*linux*-ld)
+AMD64_STRIP = $(call find_strip,x86_64-*linux*-strip)
+ARM64_AS = $(call find_as,aarch64-*linux*-as)
+ARM64_LD = $(call find_ld,aarch64-*linux*-ld)
+ARM64_STRIP = $(call find_strip,aarch64-*linux*-strip)
+PPC64LE_AS = $(call find_as,ppc64le-*linux*-as)
+PPC64LE_LD = $(call find_ld,ppc64le-*linux*-ld)
+PPC64LE_STRIP = $(call find_strip,ppc64le-*linux*-strip)
+RISCV64_AS = $(call find_as,riscv64-*linux*-as)
+RISCV64_LD = $(call find_ld,riscv64-*linux*-ld)
+RISCV64_STRIP = $(call find_strip,riscv64-*linux*-strip)
+S390X_AS = $(call find_as,s390x-*linux*-as)
+S390X_LD = $(call find_ld,s390x-*linux*-ld)
+S390X_STRIP = $(call find_strip,s390x-*linux*-strip)
+
+ifneq ($(shell $(AMD64_AS) --version | grep -E 'x86_64-([^-]+-)?linux'),)
 internal/mkcw/embed/entrypoint_amd64: internal/mkcw/embed/asm/entrypoint_amd64.s
-	$(AS) -o $(patsubst %.s,%.o,$^) $^
-	$(LD) -o $@ $(patsubst %.s,%.o,$^)
-	$(STRIP) $@
+	$(AMD64_AS) -o $(patsubst %.s,%.o,$^) $^
+	$(AMD64_LD) -o $@ $(ASM_LDFLAGS) $(patsubst %.s,%.o,$^)
+	$(AMD64_STRIP) $@
+pkg/binfmt/embed/ok_amd64: pkg/binfmt/embed/ok_amd64.s
+	$(AMD64_AS) -o $(patsubst %.s,%.o,$^) $^
+	$(AMD64_LD) -o $@ $(ASM_LDFLAGS) $(patsubst %.s,%.o,$^)
+	$(AMD64_STRIP) $@
 else
 internal/mkcw/embed/entrypoint_amd64: internal/mkcw/embed/entrypoint_amd64.s internal/mkcw/embed/entrypoint.go
 	GOOS=linux GOARCH=amd64 $(GO) build -ldflags "-E _start -s" -o $@ ./internal/mkcw/embed
 endif
 
+ifneq ($(shell $(ARM64_AS) --version | grep -E 'aarch64-([^-]+-)?linux'),)
+internal/mkcw/embed/entrypoint_arm64: internal/mkcw/embed/asm/entrypoint_arm64.s
+	$(ARM64_AS) -o $(patsubst %.s,%.o,$^) $^
+	$(ARM64_LD) -o $@ $(ASM_LDFLAGS) $(patsubst %.s,%.o,$^)
+	$(ARM64_STRIP) $@
+pkg/binfmt/embed/ok_arm64: pkg/binfmt/embed/ok_arm64.s
+	$(ARM64_AS) -o $(patsubst %.s,%.o,$^) $^
+	$(ARM64_LD) -o $@ $(ASM_LDFLAGS) $(patsubst %.s,%.o,$^)
+	$(ARM64_STRIP) $@
+else
 internal/mkcw/embed/entrypoint_arm64: internal/mkcw/embed/entrypoint_arm64.s internal/mkcw/embed/entrypoint.go
 	GOOS=linux GOARCH=arm64 $(GO) build -ldflags "-E _start -s" -o $@ ./internal/mkcw/embed
+endif
+
+ifneq ($(shell $(PPC64LE_AS) --version | grep -E 'ppc64le-([^-]+-)?linux|powerpc64le-([^-]+-)?linux'),)
+internal/mkcw/embed/entrypoint_ppc64le: internal/mkcw/embed/asm/entrypoint_ppc64le.s
+	$(PPC64LE_AS) -o $(patsubst %.s,%.o,$^) $^
+	$(PPC64LE_LD) -o $@ $(ASM_LDFLAGS) $(patsubst %.s,%.o,$^)
+	$(PPC64LE_STRIP) $@
+pkg/binfmt/embed/ok_ppc64le: pkg/binfmt/embed/ok_ppc64le.s
+	$(PPC64LE_AS) -o $(patsubst %.s,%.o,$^) $^
+	$(PPC64LE_LD) -o $@ $(ASM_LDFLAGS) $(patsubst %.s,%.o,$^)
+	$(PPC64LE_STRIP) $@
+else
 internal/mkcw/embed/entrypoint_ppc64le: internal/mkcw/embed/entrypoint_ppc64le.s internal/mkcw/embed/entrypoint.go
 	GOOS=linux GOARCH=ppc64le $(GO) build -ldflags "-E _start -s" -o $@ ./internal/mkcw/embed
+endif
+
+ifneq ($(shell $(RISCV64_AS) --version | grep -E 'riscv64-([^-]+-)?linux'),)
+internal/mkcw/embed/entrypoint_riscv64: internal/mkcw/embed/asm/entrypoint_riscv64.s
+	$(RISCV64_AS) -o $(patsubst %.s,%.o,$^) $^
+	$(RISCV64_LD) -o $@ $(ASM_LDFLAGS) $(patsubst %.s,%.o,$^)
+	$(RISCV64_STRIP) $@
+pkg/binfmt/embed/ok_riscv64: pkg/binfmt/embed/ok_riscv64.s
+	$(RISCV64_AS) -o $(patsubst %.s,%.o,$^) $^
+	$(RISCV64_LD) -o $@ $(ASM_LDFLAGS) $(patsubst %.s,%.o,$^)
+	$(RISCV64_STRIP) $@
+else
+internal/mkcw/embed/entrypoint_riscv64: internal/mkcw/embed/entrypoint_riscv64.s internal/mkcw/embed/entrypoint.go
+	GOOS=linux GOARCH=riscv64 $(GO) build -ldflags "-E _start -s" -o $@ ./internal/mkcw/embed
+endif
+
+ifneq ($(shell $(S390X_AS) --version | grep -E 's390x-([^-]+-)?linux'),)
+internal/mkcw/embed/entrypoint_s390x: internal/mkcw/embed/asm/entrypoint_s390x.s
+	$(S390X_AS) -o $(patsubst %.s,%.o,$^) $^
+	$(S390X_LD) -o $@ $(ASM_LDFLAGS) $(patsubst %.s,%.o,$^)
+	$(S390X_STRIP) $@
+pkg/binfmt/embed/ok_s390x: pkg/binfmt/embed/ok_s390x.s
+	$(S390X_AS) -o $(patsubst %.s,%.o,$^) $^
+	$(S390X_LD) -o $@ $(ASM_LDFLAGS) $(patsubst %.s,%.o,$^)
+	$(S390X_STRIP) $@
+else
 internal/mkcw/embed/entrypoint_s390x: internal/mkcw/embed/entrypoint_s390x.s internal/mkcw/embed/entrypoint.go
 	GOOS=linux GOARCH=s390x $(GO) build -ldflags "-E _start -s" -o $@ ./internal/mkcw/embed
+endif
 
 .PHONY: buildah
 buildah: bin/buildah
@@ -103,7 +179,7 @@ FREEBSD_CROSS_TARGETS := $(filter bin/buildah.freebsd.%,$(ALL_CROSS_TARGETS))
 .PHONY: cross
 cross: $(LINUX_CROSS_TARGETS) $(DARWIN_CROSS_TARGETS) $(WINDOWS_CROSS_TARGETS) $(FREEBSD_CROSS_TARGETS)
 
-bin/buildah.%: $(SOURCES) internal/mkcw/embed/entrypoint_amd64.gz
+bin/buildah.%: $(SOURCES) internal/mkcw/embed/entrypoint_amd64.gz pkg/binfmt/embed/ok_amd64 pkg/binfmt/embed/ok_arm64 pkg/binfmt/embed/ok_ppc64le pkg/binfmt/embed/ok_riscv64 pkg/binfmt/embed/ok_s390x
 	mkdir -p ./bin
 	GOOS=$(word 2,$(subst ., ,$@)) GOARCH=$(word 3,$(subst ., ,$@)) $(GO_BUILD) $(BUILDAH_LDFLAGS) -o $@ -tags "containers_image_openpgp" ./cmd/buildah
 
@@ -139,7 +215,7 @@ bin/pipeloop: tests/pipeloop/pipeloop.go
 
 .PHONY: clean
 clean:
-	$(RM) -r bin tests/testreport/testreport tests/conformance/testdata/mount-targets/true internal/mkcw/embed/entrypoint_arm64 internal/mkcw/embed/entrypoint_ppc64le internal/mkcw/embed/entrypoint_s390x internal/mkcw/embed/entrypoint_arm64.gz internal/mkcw/embed/entrypoint_ppc64le.gz internal/mkcw/embed/entrypoint_s390x.gz internal/mkcw/embed/asm/*.o
+	$(RM) -r bin tests/testreport/testreport tests/conformance/testdata/mount-targets/true internal/mkcw/embed/entrypoint_arm64 internal/mkcw/embed/entrypoint_ppc64le internal/mkcw/embed/entrypoint_riscv64 internal/mkcw/embed/entrypoint_s390x internal/mkcw/embed/entrypoint_arm64.gz internal/mkcw/embed/entrypoint_ppc64le.gz internal/mkcw/embed/entrypoint_riscv64.gz internal/mkcw/embed/entrypoint_s390x.gz internal/mkcw/embed/asm/*.o pkg/binfmt/embed/*.o
 	$(MAKE) -C docs clean
 
 .PHONY: docs
@@ -158,8 +234,8 @@ validate: all lint lint-entrypoint codespell
 	./tests/helpers.bash.t
 
 .PHONY: lint-entrypoint
-lint-entrypoint: internal/mkcw/embed/entrypoint_amd64.gz
-	$(GO) run tests/validate/was-not-go-compiled.go internal/mkcw/embed/entrypoint_amd64.gz
+lint-entrypoint: internal/mkcw/embed/entrypoint_amd64.gz pkg/binfmt/embed/ok_amd64 pkg/binfmt/embed/ok_arm64 pkg/binfmt/embed/ok_ppc64le pkg/binfmt/embed/ok_riscv64 pkg/binfmt/embed/ok_s390x
+	$(GO) run tests/validate/was-not-go-compiled.go $^
 
 .PHONY: install.go-md2man
 install.go-md2man:
