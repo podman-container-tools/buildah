@@ -53,6 +53,12 @@ type Options struct {
 	ForceMount bool
 	// MountLabel is a label to force for the overlay filesystem.
 	MountLabel string
+	// Volatile asks for the "volatile" mount option when this package mounts
+	// a writable overlay natively (ForceMount, no mount program), so that
+	// unmounting it does not sync the filesystem that holds the upper
+	// directory. Use it only when the upper directory is discarded after the
+	// overlay is unmounted.
+	Volatile bool
 }
 
 // TempDir generates a uniquely-named directory under ${containerDir}/overlay
