@@ -225,6 +225,7 @@ vendor:
 	$(GO) mod vendor
 	$(GO) mod verify
 	if test -n "$(strip $(shell $(GO) env GOTOOLCHAIN))"; then go mod edit -toolchain none ; fi
+	./hack/container-libs-module-check.sh
 
 .PHONY: lint
 lint: install.golangci-lint internal/mkcw/embed/entrypoint_amd64.gz
