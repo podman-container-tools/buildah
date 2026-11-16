@@ -120,7 +120,11 @@ load helpers
 
   run_buildah images -q
   expect_line_count 1 "There's only one actual image ID"
-  alpine_iid=$output
+
+  # Image IDs are random, so remember the config digest: for OCI and docker
+  # v2s2 images it is the value the image ID used to be derived from.
+  run_buildah inspect --type=image --format '{{.Manifest}}' alpine
+  alpine_config_digest=$(jq -r .config.digest <<<"$output")
 
   # Remove it, and confirm.
   run_buildah rmi alpine
@@ -141,9 +145,13 @@ load helpers
       expect_output --substring "<$tag>"
   done
 
-  # Finally, make sure that there's actually one and exactly one image
+  # Finally, make sure that there's actually one and exactly one image, and
+  # that it has the same content as the original alpine.
   run_buildah images -q
-  expect_output $alpine_iid "Pulled image has the same IID as original alpine"
+  expect_line_count 1 "There's exactly one image after pulling all tags"
+  run_buildah inspect --type=image --format '{{.Manifest}}' localhost:${REGISTRY_PORT}/myalpine:latest
+  assert "$(jq -r .config.digest <<<"$output")" = "$alpine_config_digest" \
+         "Pulled image has the same config digest as original alpine"
 }
 
 @test "pull-from-oci-directory" {
