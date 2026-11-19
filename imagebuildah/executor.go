@@ -89,6 +89,7 @@ type executor struct {
 	contextDirFilterLock           sync.Mutex
 	contextDirFiltered             bool
 	contextDirFilterErr            error
+	contextDirRunBindMount         string // Holds the filtered context copy used by RUN bind mounts.
 	disableRunBindMountIgnore      bool
 	pullPolicy                     define.PullPolicy
 	registry                       string
@@ -994,6 +995,19 @@ func (b *executor) Build(ctx context.Context, stages imagebuilder.Stages) (image
 		if err := g.Wait(); err != nil {
 			logrus.Debugf("Failed to cleanup additional build context temp dir: %v", err)
 			lastErr = err
+		}
+
+		// Remove the temporary context copy created for default-context RUN bind mounts.
+		b.contextDirFilterLock.Lock()
+		dir := b.contextDirRunBindMount
+		b.contextDirRunBindMount = ""
+		b.contextDirFilterLock.Unlock()
+
+		if dir != "" {
+			if err := os.RemoveAll(dir); err != nil {
+				logrus.Debugf("Failed to remove temporary RUN bind mount context: %v", err)
+				lastErr = err
+			}
 		}
 
 		if b.rusageLogFile != nil && b.rusageLogFile != b.out {

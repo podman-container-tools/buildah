@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/openshift/imagebuilder"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.podman.io/image/v5/types"
 )
 
 func TestHistoryEntriesEqual(t *testing.T) {
@@ -258,4 +261,57 @@ func TestQuoteLabelValue(t *testing.T) {
 func TestLabelInstruction(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, `LABEL "a"="\$b" "c"=""`, labelInstruction([]string{"a=$b", "c", "=ignored"}, nil))
+}
+
+func TestCopyContextDir(t *testing.T) {
+	t.Parallel()
+
+	src := t.TempDir()
+	dest := t.TempDir()
+
+	sourceFile := filepath.Join(src, "file.txt")
+	require.NoError(t, os.WriteFile(sourceFile, []byte("original"), 0o600))
+	sourceSymlink := filepath.Join(src, "link.txt")
+	require.NoError(t, os.Symlink("file.txt", sourceSymlink))
+
+	require.NoError(t, copyContextDir(context.Background(), src, dest))
+
+	copiedFile := filepath.Join(dest, "file.txt")
+	copiedContents, err := os.ReadFile(copiedFile)
+	require.NoError(t, err)
+	require.Equal(t, "original", string(copiedContents))
+
+	copiedSymlink := filepath.Join(dest, "link.txt")
+	linkTarget, err := os.Readlink(copiedSymlink)
+	require.NoError(t, err)
+	require.Equal(t, "file.txt", linkTarget)
+
+	// Changes to the copy must not affect the original build context.
+	require.NoError(t, os.WriteFile(copiedFile, []byte("modified"), 0o600))
+
+	originalContents, err := os.ReadFile(sourceFile)
+	require.NoError(t, err)
+	require.Equal(t, "original", string(originalContents))
+}
+
+func TestRunStageMountPointsUsesFilteredContextCopy(t *testing.T) {
+	t.Parallel()
+
+	exec := &executor{
+		contextDir:                   "/build/context",
+		contextDirRunBindMount:       "/tmp/filtered-context",
+		contextDirWritesAreDiscarded: false,
+	}
+
+	s := &stageExecutor{
+		systemContext: &types.SystemContext{},
+		executor:      exec,
+	}
+
+	mountPoints, err := s.runStageMountPoints(nil)
+	require.NoError(t, err)
+
+	defaultContext := mountPoints[""]
+	require.Equal(t, "/tmp/filtered-context", defaultContext.MountPoint)
+	require.False(t, defaultContext.IsWritesDiscardedOverlay)
 }
