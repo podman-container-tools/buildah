@@ -31,7 +31,10 @@ func umountInit() {
 }
 
 func umountCmd(c *cobra.Command, args []string) error {
-	umountAll := c.Flag("all").Changed
+	umountAll, err := c.Flags().GetBool("all")
+	if err != nil {
+		return err
+	}
 
 	umountContainerErrStr := "error unmounting container"
 	if len(args) == 0 && !umountAll {
