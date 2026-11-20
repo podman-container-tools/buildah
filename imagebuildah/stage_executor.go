@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	docker "github.com/fsouza/go-dockerclient"
@@ -51,6 +52,7 @@ import (
 	"go.podman.io/image/v5/types"
 	"go.podman.io/storage"
 	"go.podman.io/storage/pkg/chrootarchive"
+	"go.podman.io/storage/pkg/fileutils"
 	"go.podman.io/storage/pkg/unshare"
 )
 
@@ -694,9 +696,20 @@ func (s *stageExecutor) runStageMountPoints(mountList []string) (map[string]inte
 		Proxy:                 s.executor.proxy,
 	}
 	stageMountPoints := make(map[string]internal.StageMountDetails)
+
+	// Use the filtered copy for default-context RUN mounts when one was created.
+	s.executor.contextDirFilterLock.Lock()
+	defaultContextDir := s.executor.contextDir
+	isWritesDiscardedOverlay := s.executor.contextDirWritesAreDiscarded
+	if s.executor.contextDirRunBindMount != "" {
+		defaultContextDir = s.executor.contextDirRunBindMount
+		isWritesDiscardedOverlay = false
+	}
+	s.executor.contextDirFilterLock.Unlock()
+
 	stageMountPoints[""] = internal.StageMountDetails{
-		MountPoint:               s.executor.contextDir,
-		IsWritesDiscardedOverlay: s.executor.contextDirWritesAreDiscarded,
+		MountPoint:               defaultContextDir,
+		IsWritesDiscardedOverlay: isWritesDiscardedOverlay,
 	}
 	for _, flag := range mountList {
 		if strings.Contains(flag, "from") {
@@ -809,6 +822,33 @@ func (s *stageExecutor) runStageMountPoints(mountList []string) (map[string]inte
 	return stageMountPoints, nil
 }
 
+func hasDefaultContextBindMount(mountList []string) bool {
+	for _, mount := range mountList {
+		mountType := define.TypeBind
+		hasFrom := false
+
+		for token := range strings.SplitSeq(mount, ",") {
+			key, value, hasValue := strings.Cut(token, "=")
+			switch key {
+			case "type":
+				if hasValue {
+					mountType = value
+				}
+			case "from":
+				if hasValue && value != "" {
+					hasFrom = true
+				}
+			}
+		}
+
+		if mountType == define.TypeBind && !hasFrom {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (s *stageExecutor) createNeededHeredocMountsForRun(files []imagebuilder.File) ([]Mount, error) {
 	mountResult := []Mount{}
 	for _, file := range files {
@@ -882,7 +922,64 @@ func (s *stageExecutor) Run(run imagebuilder.Run, config docker.Config) error {
 			args = []string{full.String()}
 		}
 	}
-	stageMountPoints, err := s.runStageMountPoints(slices.Concat(run.Mounts, s.executor.transientRunMounts))
+	runMounts := slices.Concat(run.Mounts, s.executor.transientRunMounts)
+
+	if len(s.executor.excludes) > 0 &&
+		hasDefaultContextBindMount(runMounts) &&
+		!s.executor.disableRunBindMountIgnore {
+		s.executor.contextDirFilterLock.Lock()
+		if !s.executor.contextDirFiltered && s.executor.contextDirFilterErr == nil {
+			// Filter the existing overlay when possible. Otherwise, use a copy so
+			// that ignored files remain available to other build instructions.
+			if s.executor.contextDirWritesAreDiscarded {
+				s.executor.contextDirFilterErr = filterContextOverlay(
+					s.executor.contextDir,
+					s.executor.excludes,
+				)
+			} else {
+				var tempDir string
+				tempDir, s.executor.contextDirFilterErr = os.MkdirTemp(
+					parse.GetTempDir(),
+					"buildah-run-context-",
+				)
+				if s.executor.contextDirFilterErr == nil {
+					s.executor.contextDirFilterErr = copyContextDir(
+						s.ctx,
+						s.executor.contextDir,
+						tempDir,
+					)
+				}
+				if s.executor.contextDirFilterErr == nil {
+					s.executor.contextDirFilterErr = filterContextOverlay(
+						tempDir,
+						s.executor.excludes,
+					)
+				}
+
+				if s.executor.contextDirFilterErr != nil {
+					if tempDir != "" {
+						if err := os.RemoveAll(tempDir); err != nil {
+							logrus.Debugf("Failed to remove incomplete RUN bind mount context: %v", err)
+						}
+					}
+				} else {
+					s.executor.contextDirRunBindMount = tempDir
+				}
+			}
+
+			if s.executor.contextDirFilterErr == nil {
+				s.executor.contextDirFiltered = true
+			}
+		}
+		filterErr := s.executor.contextDirFilterErr
+		s.executor.contextDirFilterLock.Unlock()
+
+		if filterErr != nil {
+			return fmt.Errorf("filtering build context for RUN bind mount: %w", filterErr)
+		}
+	}
+
+	stageMountPoints, err := s.runStageMountPoints(runMounts)
 	if err != nil {
 		return err
 	}
@@ -915,7 +1012,7 @@ func (s *stageExecutor) Run(run imagebuilder.Run, config docker.Config) error {
 		NoPivot:              os.Getenv("BUILDAH_NOPIVOT") != "" || s.executor.noPivotRoot,
 		Quiet:                s.executor.quiet,
 		CompatBuiltinVolumes: types.OptionalBoolFalse,
-		RunMounts:            slices.Concat(run.Mounts, s.executor.transientRunMounts),
+		RunMounts:            runMounts,
 		Runtime:              s.executor.runtime,
 		Secrets:              s.executor.secrets,
 		SSHSources:           s.executor.sshsources,
@@ -3060,4 +3157,145 @@ func (s *stageExecutor) buildMetadata(isLastStep bool, isAddOrCopy bool) string 
 		return unsetLabels.String() + " " + inheritLabels + " " + unsetAnnotations.String() + " " + inheritAnnotations + " " + layerMutations + " " + newAnnotations
 	}
 	return unsetLabels.String() + inheritLabels + unsetAnnotations.String() + inheritAnnotations + layerMutations + newAnnotations
+}
+
+// contextIncludeDirectoryAnyway is similar to add.go's
+// includeDirectoryAnyway, but also handles wildcard components in exclusion
+// patterns. RUN bind mounts need to preserve excluded directories when a
+// negation pattern could match a descendant, even when the directory prefix
+// contains wildcards (for example, !keep/*/important.txt).
+//
+// Related: https://github.com/containers/buildah/pull/6927
+// That PR updates COPY/ADD to use PatternMatcher.ShouldDescendExcludedDir()
+// from containers/storage. Once that change is merged and the updated storage
+// dependency is available, consider using the same helper here to avoid
+// maintaining separate directory-descent implementations.
+func contextIncludeDirectoryAnyway(path string, pm *fileutils.PatternMatcher) bool {
+	if !pm.Exclusions() {
+		return false
+	}
+
+	pathParts := strings.Split(filepath.ToSlash(path), "/")
+	for _, pattern := range pm.Patterns() {
+		if !pattern.Exclusion() {
+			continue
+		}
+
+		spec := strings.TrimPrefix(pattern.String(), string(os.PathSeparator))
+		patternParts := strings.Split(filepath.ToSlash(spec), "/")
+		if patternCouldMatchDescendant(pathParts, patternParts, 0, 0) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// patternCouldMatchDescendant reports whether patternParts could match a path
+// at or below the directory represented by pathParts. Unlike a literal-prefix
+// check, it matches wildcard components and treats ** as matching zero or more
+// path components.
+func patternCouldMatchDescendant(pathParts, patternParts []string, pathIndex, patternIndex int) bool {
+	if pathIndex == len(pathParts) {
+		// The directory prefix matched. The remaining pattern components
+		// could match a descendant of this directory.
+		return true
+	}
+	if patternIndex == len(patternParts) {
+		return false
+	}
+
+	if patternParts[patternIndex] == "**" {
+		// ** can match zero components or consume another path component.
+		return patternCouldMatchDescendant(pathParts, patternParts, pathIndex, patternIndex+1) ||
+			patternCouldMatchDescendant(pathParts, patternParts, pathIndex+1, patternIndex)
+	}
+
+	matched, err := filepath.Match(patternParts[patternIndex], pathParts[pathIndex])
+	if err != nil || !matched {
+		return false
+	}
+
+	return patternCouldMatchDescendant(pathParts, patternParts, pathIndex+1, patternIndex+1)
+}
+
+// copyContextDir copies a build context into a temporary directory using the copier archive format.
+func copyContextDir(ctx context.Context, src, dest string) error {
+	var getErr, putErr error
+	var wg sync.WaitGroup
+
+	pipeReader, pipeWriter := io.Pipe()
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		getErr = copier.GetContext(ctx, src, src, copier.GetOptions{
+			NoDerefSymlinks: true,
+		}, []string{"."}, pipeWriter)
+		_ = pipeWriter.CloseWithError(getErr)
+	}()
+	go func() {
+		defer wg.Done()
+		putErr = copier.PutContext(ctx, dest, dest, copier.PutOptions{}, pipeReader)
+		_ = pipeReader.CloseWithError(putErr)
+	}()
+	wg.Wait()
+
+	if putErr != nil && errors.Is(getErr, io.ErrClosedPipe) {
+		return fmt.Errorf("copying build context %q to %q: %w", src, dest, putErr)
+	}
+	if getErr != nil {
+		return fmt.Errorf("reading build context %q: %w", src, getErr)
+	}
+	if putErr != nil {
+		return fmt.Errorf("copying build context %q to %q: %w", src, dest, putErr)
+	}
+	return nil
+}
+
+func filterContextOverlay(contextDir string, excludes []string) error {
+	pm, err := fileutils.NewPatternMatcher(excludes)
+	if err != nil {
+		return fmt.Errorf("processing excludes list %v: %w", excludes, err)
+	}
+
+	err = filepath.WalkDir(contextDir, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == contextDir {
+			return nil
+		}
+
+		rel, err := filepath.Rel(contextDir, path)
+		if err != nil {
+			return fmt.Errorf("computing path of %q relative to %q: %w", path, contextDir, err)
+		}
+
+		matchResult, err := pm.MatchesResult(rel)
+		if err != nil {
+			return fmt.Errorf("checking if %q is excluded: %w", rel, err)
+		}
+		if matchResult == nil || !matchResult.IsMatched() {
+			return nil
+		}
+
+		if entry.IsDir() && contextIncludeDirectoryAnyway(rel, pm) {
+			return nil
+		}
+
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("removing excluded context path %q: %w", rel, err)
+		}
+
+		if entry.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("filtering build context: %w", err)
+	}
+
+	return nil
 }

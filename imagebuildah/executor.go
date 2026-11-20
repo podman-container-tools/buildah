@@ -86,6 +86,11 @@ type executor struct {
 	store                          storage.Store
 	contextDir                     string
 	contextDirWritesAreDiscarded   bool
+	contextDirFilterLock           sync.Mutex
+	contextDirFiltered             bool
+	contextDirFilterErr            error
+	contextDirRunBindMount         string // Holds the filtered context copy used by RUN bind mounts.
+	disableRunBindMountIgnore      bool
 	pullPolicy                     define.PullPolicy
 	registry                       string
 	ignoreUnrecognizedInstructions bool
@@ -300,6 +305,7 @@ func newExecutor(logger *logrus.Logger, logPrefix string, store storage.Store, o
 		store:                                   store,
 		contextDir:                              options.ContextDirectory,
 		contextDirWritesAreDiscarded:            contextWritesDiscarded,
+		disableRunBindMountIgnore:               options.DisableRunBindMountIgnore,
 		excludes:                                excludes,
 		groupAdd:                                options.GroupAdd,
 		ignoreFile:                              options.IgnoreFile,
@@ -989,6 +995,19 @@ func (b *executor) Build(ctx context.Context, stages imagebuilder.Stages) (image
 		if err := g.Wait(); err != nil {
 			logrus.Debugf("Failed to cleanup additional build context temp dir: %v", err)
 			lastErr = err
+		}
+
+		// Remove the temporary context copy created for default-context RUN bind mounts.
+		b.contextDirFilterLock.Lock()
+		dir := b.contextDirRunBindMount
+		b.contextDirRunBindMount = ""
+		b.contextDirFilterLock.Unlock()
+
+		if dir != "" {
+			if err := os.RemoveAll(dir); err != nil {
+				logrus.Debugf("Failed to remove temporary RUN bind mount context: %v", err)
+				lastErr = err
+			}
 		}
 
 		if b.rusageLogFile != nil && b.rusageLogFile != b.out {
