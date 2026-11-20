@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -361,8 +362,17 @@ func updateConfig(builder *buildah.Builder, c *cobra.Command, iopts configResult
 	return nil
 }
 
+var healthcheckFlagNames = []string{
+	"healthcheck",
+	"healthcheck-interval",
+	"healthcheck-start-interval",
+	"healthcheck-retries",
+	"healthcheck-start-period",
+	"healthcheck-timeout",
+}
+
 func updateHealthcheck(builder *buildah.Builder, c *cobra.Command, iopts configResults) error {
-	if c.Flag("healthcheck").Changed || c.Flag("healthcheck-interval").Changed || c.Flag("healthcheck-retries").Changed || c.Flag("healthcheck-start-period").Changed || c.Flag("healthcheck-timeout").Changed {
+	if slices.ContainsFunc(healthcheckFlagNames, c.Flags().Changed) {
 		healthcheck := builder.Healthcheck()
 		args := ""
 		if healthcheck == nil {
