@@ -17,10 +17,6 @@
 %define sequoia 1
 %endif
 
-%if %{defined rhel}
-%define fips 1
-%endif
-
 %global git0 https://github.com/containers/%{name}
 
 Name: buildah
@@ -136,10 +132,6 @@ export LDFLAGS="-X main.buildInfo=`date +%s`"
 export BUILDTAGS="seccomp $(hack/systemd_tag.sh) $(hack/libsubid_tag.sh) libsqlite3"
 %if !%{defined build_with_btrfs}
 export BUILDTAGS+=" exclude_graphdriver_btrfs"
-%endif
-
-%if %{defined fips}
-export BUILDTAGS+=" libtrust_openssl"
 %endif
 
 %if %{defined sequoia}
