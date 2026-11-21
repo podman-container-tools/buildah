@@ -316,6 +316,21 @@ function check_matrix() {
   expect_output "8"
   run_buildah inspect               -f      '{{.Docker.Config.OnBuild}}'                 scratch-image-docker
   expect_output "[RUN touch /foo]"
+
+  # Healthcheck tests for OCI images.
+  run_buildah inspect --type=image --format '{{.Docker.Config.Healthcheck.Test}}'        scratch-image-oci
+  expect_output "[CMD /bin/true]"
+  run_buildah inspect --type=image --format '{{.Docker.Config.Healthcheck.StartPeriod}}' scratch-image-oci
+  expect_output "5s"
+  run_buildah inspect --type=image --format '{{.Docker.Config.Healthcheck.StartInterval}}' scratch-image-oci
+  expect_output "30s"
+  run_buildah inspect --type=image --format '{{.Docker.Config.Healthcheck.Interval}}'    scratch-image-oci
+  expect_output "6s"
+  run_buildah inspect --type=image --format '{{.Docker.Config.Healthcheck.Timeout}}'     scratch-image-oci
+  expect_output "7s"
+  run_buildah inspect --type=image --format '{{.Docker.Config.Healthcheck.Retries}}'     scratch-image-oci
+  expect_output "8"
+
   rm -rf /VOLUME
 }
 
