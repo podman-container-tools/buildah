@@ -31,6 +31,7 @@ import (
 	"go.podman.io/buildah/internal/ctxreader"
 	internalUtil "go.podman.io/buildah/internal/util"
 	"go.podman.io/buildah/pkg/parse"
+	pkgutil "go.podman.io/buildah/pkg/util"
 	"go.podman.io/buildah/util"
 	"go.podman.io/common/libimage"
 	"go.podman.io/common/pkg/config"
@@ -120,6 +121,14 @@ func BuildDockerfiles(ctx context.Context, store storage.Store, options define.B
 		}
 	}
 
+	var contextAbs string
+	if options.ContextDirectory != "" {
+		contextAbs, err = filepath.Abs(options.ContextDirectory)
+		if err != nil {
+			return "", nil, fmt.Errorf("resolving context directory %q: %w", options.ContextDirectory, err)
+		}
+	}
+
 	for _, dfile := range paths {
 		var data io.Reader
 
@@ -139,15 +148,33 @@ func BuildDockerfiles(ctx context.Context, store storage.Store, options define.B
 			}
 			data = resp.Body
 		} else {
-			dinfo, err := os.Stat(dfile)
-			if err != nil {
-				// If the Dockerfile isn't available, try again with
-				// context directory prepended (if not prepended yet).
-				if !strings.HasPrefix(dfile, options.ContextDirectory) {
-					dfile = filepath.Join(options.ContextDirectory, dfile)
-					dinfo, err = os.Stat(dfile)
+			if contextAbs != "" {
+				dfileAbs := dfile
+				if !filepath.IsAbs(dfileAbs) {
+					if _, err := os.Lstat(dfileAbs); err == nil {
+						dfileAbs, err = filepath.Abs(dfileAbs)
+						if err != nil {
+							return "", nil, fmt.Errorf("resolving containerfile %q: %w", dfile, err)
+						}
+					} else {
+						dfileAbs = filepath.Join(contextAbs, dfileAbs)
+					}
+				}
+
+				// Only RESOLVE_IN_ROOT when -f is under the context.
+				// External -f (Docker/man-page behavior) is read as a host path.
+				if inContextPath, underContext := containerfileUnderContext(contextAbs, dfileAbs); underContext {
+					resolved, err := pkgutil.ResolveInContext(contextAbs, inContextPath)
+					if err != nil {
+						return "", nil, fmt.Errorf("resolving containerfile %q: %w", dfile, err)
+					}
+					dfile = resolved
+				} else {
+					dfile = dfileAbs
 				}
 			}
+
+			dinfo, err := os.Stat(dfile)
 			if err != nil {
 				return "", nil, err
 			}
@@ -819,4 +846,31 @@ func baseImages(dockerfilenames []string, dockerfilecontents [][]byte, from stri
 		}
 	}
 	return baseImages, nil
+}
+
+// containerfileUnderContext reports whether dfileAbs is logically inside
+// contextAbs. When true, it returns the path re-rooted under contextAbs
+// (resolving any directory symlinks) so that SecureJoin / IsRegularFileInContext
+// can properly validate symlinks within the context root.
+//
+// Only RESOLVE_IN_ROOT is applied when this returns true; external -f paths
+// are read as host paths.
+func containerfileUnderContext(contextAbs, dfileAbs string) (string, bool) {
+	rel, err := filepath.Rel(contextAbs, dfileAbs)
+	if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return dfileAbs, true
+	}
+
+	// If lexical check didn't match, the path to the Dockerfile directory
+	// might contain symlinks pointing into contextAbs (or vice versa).
+	dfileDirReal, err1 := filepath.EvalSymlinks(filepath.Dir(dfileAbs))
+	contextReal, err2 := filepath.EvalSymlinks(contextAbs)
+	if err1 == nil && err2 == nil {
+		relDir, err := filepath.Rel(contextReal, dfileDirReal)
+		if err == nil && relDir != ".." && !strings.HasPrefix(relDir, ".."+string(filepath.Separator)) {
+			return filepath.Join(contextReal, relDir, filepath.Base(dfileAbs)), true
+		}
+	}
+
+	return "", false
 }
