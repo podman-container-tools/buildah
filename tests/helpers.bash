@@ -1155,3 +1155,90 @@ function convert_v1_shares_to_v2_weight() {
   test -n "$newconverted"
   echo "$oldconverted" "$newconverted"
 }
+
+################################################
+#  build_oci_image_with_layer_annotations      #
+################################################
+# Build a minimal single-layer OCI image with per-layer annotations,
+# copy it into storage, and echo the image name.
+# Usage: local img=$(build_oci_image_with_layer_annotations name '"key1": "val1", "key2": "val2"')
+function build_oci_image_with_layer_annotations() {
+  local name="$1"; shift
+  local annotations="$*"
+  local imgdir=${TEST_SCRATCH_DIR}/oci-image
+  mkdir -p ${imgdir}/blobs/sha256
+
+  # Create a layer.
+  dd if=/dev/zero bs=512 count=2 of=${imgdir}/blob 2>/dev/null
+  local layerdigest=$(sha256sum ${imgdir}/blob | awk '{print $1}')
+  local layersize=$(stat -c %s ${imgdir}/blob)
+  mv ${imgdir}/blob ${imgdir}/blobs/sha256/${layerdigest}
+
+  # Create a configuration blob.
+  local arch=$(go env GOARCH)
+  cat > ${imgdir}/blob << EOF
+  {
+    "architecture": "$arch",
+    "os": "linux",
+    "config": {},
+    "rootfs": {
+        "type": "layers",
+        "diff_ids": [
+            "sha256:${layerdigest}"
+        ]
+    },
+    "history": [
+        {
+            "created_by": "test layer"
+        }
+    ]
+  }
+EOF
+  local configdigest=$(sha256sum ${imgdir}/blob | awk '{print $1}')
+  local configsize=$(stat -c %s ${imgdir}/blob)
+  mv ${imgdir}/blob ${imgdir}/blobs/sha256/${configdigest}
+
+  # Create a manifest with layer annotations.
+  cat > ${imgdir}/blob << EOF
+  {
+    "schemaVersion": 2,
+    "config": {
+        "mediaType": "application/vnd.oci.image.config.v1+json",
+        "digest": "sha256:${configdigest}",
+        "size": ${configsize}
+    },
+    "layers": [
+        {
+            "mediaType": "application/vnd.oci.image.layer.v1.tar",
+            "digest": "sha256:${layerdigest}",
+            "size": ${layersize},
+            "annotations": {
+                ${annotations}
+            }
+        }
+    ]
+  }
+EOF
+  local manifestdigest=$(sha256sum ${imgdir}/blob | awk '{print $1}')
+  local manifestsize=$(stat -c %s ${imgdir}/blob)
+  mv ${imgdir}/blob ${imgdir}/blobs/sha256/${manifestdigest}
+
+  # Add the manifest to the image index.
+  cat > ${imgdir}/index.json << EOF
+  {
+    "schemaVersion": 2,
+    "manifests": [
+        {
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "digest": "sha256:${manifestdigest}",
+            "size": ${manifestsize}
+        }
+    ]
+  }
+EOF
+
+  echo -n '{"imageLayoutVersion": "1.0.0"}' > ${imgdir}/oci-layout
+
+  copy oci:${imgdir} containers-storage:${name} >&2 || die "Internal error: could not copy OCI image to containers-storage:${name}"
+  echo "${name}"
+}
