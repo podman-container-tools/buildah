@@ -118,7 +118,11 @@ func MountWithOptions(contentDir, source, dest string, opts *Options) (mount spe
 	mount.Options = strings.Split(overlayOptions, ",")
 
 	if opts.ForceMount {
-		if err := mountNatively(overlayOptions, mergeDir); err != nil {
+		nativeOptions := overlayOptions
+		if opts.Volatile && !opts.ReadOnly {
+			nativeOptions += ",volatile"
+		}
+		if err := mountNatively(nativeOptions, mergeDir); err != nil {
 			return mount, err
 		}
 

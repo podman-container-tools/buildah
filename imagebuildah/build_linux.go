@@ -73,6 +73,9 @@ func platformSetupContextDirectoryOverlay(store storage.Store, options *define.B
 		GraphOpts:  slices.Clone(store.GraphOptions()),
 		ForceMount: true,
 		MountLabel: mountLabel,
+		// The upper directory is removed after the build, so there is
+		// nothing to sync to disk when the overlay is unmounted.
+		Volatile: true,
 	}
 	targetDir := filepath.Join(contentDir, "target")
 	contextDirMountSpec, err := overlay.MountWithOptions(contentDir, contextDirectoryAbsolute, targetDir, &overlayOptions)
