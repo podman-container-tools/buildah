@@ -697,8 +697,10 @@ func (s *stageExecutor) runStageMountPoints(mountList []string) (map[string]inte
 	}
 	stageMountPoints := make(map[string]internal.StageMountDetails)
 
-	defaultContextDir := s.executor.contextDir
+	// Use the filtered copy for default-context RUN mounts when one was created.
 	s.executor.contextDirFilterLock.Lock()
+	defaultContextDir := s.executor.contextDir
+	isWritesDiscardedOverlay := s.executor.contextDirWritesAreDiscarded
 	if s.executor.contextDirRunBindMount != "" {
 		defaultContextDir = s.executor.contextDirRunBindMount
 	}
@@ -706,7 +708,7 @@ func (s *stageExecutor) runStageMountPoints(mountList []string) (map[string]inte
 
 	stageMountPoints[""] = internal.StageMountDetails{
 		MountPoint:               defaultContextDir,
-		IsWritesDiscardedOverlay: s.executor.contextDirWritesAreDiscarded,
+		IsWritesDiscardedOverlay: isWritesDiscardedOverlay,
 	}
 	for _, flag := range mountList {
 		if strings.Contains(flag, "from") {
@@ -924,10 +926,6 @@ func (s *stageExecutor) Run(run imagebuilder.Run, config docker.Config) error {
 	if len(s.executor.excludes) > 0 &&
 		hasDefaultContextBindMount(runMounts) &&
 		!s.executor.disableRunBindMountIgnore {
-		if !s.executor.contextDirWritesAreDiscarded {
-			return fmt.Errorf("cannot filter ignored paths from a default RUN bind mount without a build-context overlay")
-		}
-
 		if err := s.executor.filterRunBindMountContext(s.ctx); err != nil {
 			return fmt.Errorf("filtering build context for RUN bind mount: %w", err)
 		}
