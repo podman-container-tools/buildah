@@ -8911,13 +8911,15 @@ EOF
   base=busybox
   _prefetch $base
   run_buildah build bud/masks
-  expect_output --substring "masked" "Everything should be masked"
+  expect_output --substring "all_masked" "Everything should be masked"
   run_buildah build --security-opt unmask=all bud/masks
-  expect_output --substring "unmasked" "Everything should be masked"
+  expect_output --substring "some_unmasked" "Something should be unmasked"
   run_buildah build --security-opt unmask=/proc/* bud/masks
-  expect_output --substring "unmasked" "Everything should be masked"
+  expect_output --substring "some_unmasked" "Something should be unmasked"
   run_buildah build --security-opt unmask=/proc/acpi bud/masks
-  expect_output --substring "unmasked" "Everything should be masked"
+  expect_output --substring "some_unmasked" "Something should be unmasked"
+  run_buildah build --security-opt unmask=/proc/irq bud/masks
+  expect_output --substring "some_unmasked" "Something should be unmasked"
 }
 
 @test "build-mounts-build-context-rw" {
