@@ -28,6 +28,9 @@ load helpers
   run_buildah 125 config --healthcheck-interval ABCD $cid
   expect_output --substring 'parsing --healthcheck-interval "ABCD": time: invalid duration "?ABCD"?'
 
+  run_buildah 125 config --healthcheck-start-interval ABCD $cid
+  expect_output --substring 'parsing --healthcheck-start-interval "ABCD": time: invalid duration "?ABCD"?'
+
   run_buildah 125 config --cmd 'AB "CD' $cid
   expect_output --substring 'parsing --cmd "AB \\"CD": invalid command line string'
 
@@ -317,6 +320,38 @@ function check_matrix() {
   run_buildah inspect               -f      '{{.Docker.Config.OnBuild}}'                 scratch-image-docker
   expect_output "[RUN touch /foo]"
   rm -rf /VOLUME
+}
+
+# GH issue: #7250
+@test "config single healthcheck flag" {
+  run_buildah from --quiet --format docker $WITH_POLICY_JSON scratch
+  cid=$output
+
+  local -a cases=(
+    "--healthcheck|Test|CMD /bin/true|[CMD /bin/true]"
+    "--healthcheck-interval|Interval|10s|10s"
+    "--healthcheck-timeout|Timeout|20s|20s"
+    "--healthcheck-start-period|StartPeriod|30s|30s"
+    "--healthcheck-start-interval|StartInterval|40s|40s"
+    "--healthcheck-retries|Retries|50|50"
+  )
+  local cfg_prefix=".Docker.Config.Healthcheck"
+  local all_fmt=""
+  local all_values=""
+  local flag field value expected
+  for case in "${cases[@]}"; do
+    IFS='|' read -r flag field value expected <<<"$case"
+    run_buildah config $flag "$value" $cid
+    run_buildah inspect --format "{{${cfg_prefix}.${field}}}" $cid
+    expect_output "$expected" "$flag used alone"
+
+    all_fmt+=" {{${cfg_prefix}.${field}}}"
+    all_values+=" $expected"
+  done
+
+  # Make sure current call did not reset previous calls
+  run_buildah inspect --format "$all_fmt" $cid
+  expect_output "$all_values" "all healthcheck fields after updates"
 }
 
 @test "config env using local environment" {
