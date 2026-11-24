@@ -12,7 +12,7 @@ const (
 
 // Attributes defines the file attributes type defined in draft-ietf-secsh-filexfer-02
 //
-// Defined in: https://filezilla-project.org/specs/draft-ietf-secsh-filexfer-02.txt#section-5
+// Defined in: https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-5
 type Attributes struct {
 	Flags uint32
 
@@ -210,7 +210,7 @@ func (a *Attributes) UnmarshalBinary(data []byte) error {
 
 // ExtendedAttribute defines the extended file attribute type defined in draft-ietf-secsh-filexfer-02
 //
-// Defined in: https://filezilla-project.org/specs/draft-ietf-secsh-filexfer-02.txt#section-5
+// Defined in: https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-5
 type ExtendedAttribute struct {
 	Type string
 	Data string

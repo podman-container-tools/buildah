@@ -1,5 +1,5 @@
 // Package sftp implements the SSH File Transfer Protocol as described in
-// https://filezilla-project.org/specs/draft-ietf-secsh-filexfer-02.txt
+// https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02
 package sftp
 
 import (
@@ -48,7 +48,7 @@ const (
 	sshFxOPUnsupported    = 8
 
 	// see draft-ietf-secsh-filexfer-13
-	// https://tools.ietf.org/html/draft-ietf-secsh-filexfer-13#section-9.1
+	// https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-13#section-9.1
 	sshFxInvalidHandle           = 9
 	sshFxNoSuchPath              = 10
 	sshFxFileAlreadyExists       = 11

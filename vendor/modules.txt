@@ -397,7 +397,7 @@ github.com/openshift/imagebuilder/strslice
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
-# github.com/pkg/sftp v1.13.12
+# github.com/pkg/sftp v1.13.13
 ## explicit; go 1.25.0
 github.com/pkg/sftp
 github.com/pkg/sftp/internal/encoding/ssh/filexfer

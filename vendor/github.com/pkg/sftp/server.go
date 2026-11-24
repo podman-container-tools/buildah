@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -37,7 +38,7 @@ type file interface {
 // Server is an SSH File Transfer Protocol (sftp) server.
 // This is intended to provide the sftp subsystem to an ssh server daemon.
 // This implementation currently supports most of sftp server protocol version 3,
-// as specified at https://filezilla-project.org/specs/draft-ietf-secsh-filexfer-02.txt
+// as specified at https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02
 type Server struct {
 	*serverConn
 	debugStream   io.Writer
@@ -269,11 +270,9 @@ func handlePacket(s *Server, p orderedRequest) error {
 	case *sshFxpRemovePacket:
 		err := os.Remove(s.toLocalPath(p.Filename))
 		rpkt = statusFromError(p.ID, err)
-	case *sshFxpRenamePacket:
-		err := os.Rename(s.toLocalPath(p.Oldpath), s.toLocalPath(p.Newpath))
-		rpkt = statusFromError(p.ID, err)
 	case *sshFxpSymlinkPacket:
-		err := os.Symlink(s.toLocalPath(p.Targetpath), s.toLocalPath(p.Linkpath))
+		// Relative targets are resolved from the link's directory, not workDir.
+		err := os.Symlink(s.toLocalTarget(p.Targetpath), s.toLocalPath(p.Linkpath))
 		rpkt = statusFromError(p.ID, err)
 	case *sshFxpClosePacket:
 		rpkt = statusFromError(p.ID, s.closeHandle(p.Handle))
@@ -366,6 +365,14 @@ func handlePacket(s *Server, p orderedRequest) error {
 
 	s.pktMgr.readyPacket(s.pktMgr.newOrderedResponse(rpkt, orderID))
 	return nil
+}
+
+func (s *Server) toLocalPath(p string) string {
+	if s.workDir != "" && !path.IsAbs(p) {
+		p = path.Join(s.workDir, p)
+	}
+
+	return s.toLocalTarget(p)
 }
 
 // Serve serves SFTP connections until the streams stop or the SFTP subsystem
@@ -548,6 +555,19 @@ func (p *sshFxpReaddirPacket) respond(svr *Server) responsePacket {
 		})
 	}
 	return ret
+}
+
+func (p *sshFxpRenamePacket) respond(svr *Server) responsePacket {
+	oldpath := svr.toLocalPath(p.Oldpath)
+	newpath := svr.toLocalPath(p.Newpath)
+
+	// SSH_FXP_RENAME may not replace an existing file; posix-rename@openssh.com is the overwriting form.
+	// Like OpenSSH, refuse the request when newpath already exists rather than letting os.Rename clobber it.
+	if _, err := svr.lstat(newpath); err == nil {
+		return statusFromError(p.ID, &os.LinkError{Op: "rename", Old: oldpath, New: newpath, Err: syscall.EEXIST})
+	}
+
+	return statusFromError(p.ID, os.Rename(oldpath, newpath))
 }
 
 func (p *sshFxpSetstatPacket) respond(svr *Server) responsePacket {

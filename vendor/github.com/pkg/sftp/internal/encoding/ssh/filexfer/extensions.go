@@ -3,7 +3,7 @@ package sshfx
 // ExtensionPair defines the extension-pair type defined in draft-ietf-secsh-filexfer-13.
 // This type is backwards-compatible with how draft-ietf-secsh-filexfer-02 defines extensions.
 //
-// Defined in: https://tools.ietf.org/html/draft-ietf-secsh-filexfer-13#section-4.2
+// Defined in: https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-13#section-4.2
 type ExtensionPair struct {
 	Name string
 	Data string
