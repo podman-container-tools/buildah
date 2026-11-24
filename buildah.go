@@ -12,6 +12,7 @@ import (
 	"time"
 
 	encconfig "github.com/containers/ocicrypt/config"
+	digest "github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	"go.podman.io/buildah/define"
@@ -126,6 +127,12 @@ type Builder struct {
 	// ImageAnnotations is a set of key-value pairs which is stored in the
 	// image's manifest.
 	ImageAnnotations map[string]string `json:"annotations,omitempty"`
+	// ImageLayerAnnotations maps layer uncompressed digests (diffIDs) to
+	// per-layer annotations.
+	ImageLayerAnnotations map[digest.Digest]map[string]string `json:"layer-annotations,omitempty"`
+	// TopLayerAnnotations stores a map of per-layer annotations for
+	// the top-most (read-write) layer.
+	TopLayerAnnotations map[string]string `json:"top-layer-annotations,omitempty"`
 	// ImageCreatedBy is a description of how this container was built.
 	ImageCreatedBy string `json:"created-by,omitempty"`
 	// ImageHistoryComment is a description of how our added layers were built.
@@ -215,6 +222,7 @@ type BuilderInfo struct {
 	ProcessLabel          string
 	MountLabel            string
 	ImageAnnotations      map[string]string
+	TopLayerAnnotations   map[string]string
 	ImageCreatedBy        string
 	OCIv1                 v1.Image
 	Docker                docker.V2Image
@@ -255,6 +263,7 @@ func GetBuildInfo(b *Builder) BuilderInfo {
 		ProcessLabel:          b.ProcessLabel,
 		MountLabel:            b.MountLabel,
 		ImageAnnotations:      b.ImageAnnotations,
+		TopLayerAnnotations:   b.TopLayerAnnotations,
 		ImageCreatedBy:        b.ImageCreatedBy,
 		OCIv1:                 b.OCIv1,
 		Docker:                b.Docker,
