@@ -254,19 +254,23 @@ func (rs *RequestServer) packetWorker(ctx context.Context, pktChan chan orderedR
 			}
 		case *sshFxpOpendirPacket:
 			request := requestFromPacket(ctx, pkt, rs.startDirectory)
-			handle := rs.nextRequest(request)
 			rpkt = request.opendir(rs.Handlers, pkt)
-			if _, ok := rpkt.(*sshFxpHandlePacket); !ok {
-				// if we return an error we have to remove the handle from the active ones
-				rs.closeRequest(handle)
+			if hpkt, ok := rpkt.(*sshFxpHandlePacket); ok {
+				// Only publish the handle once the Request is fully set up:
+				// a pipelined READ/WRITE on it is handled concurrently.
+				hpkt.Handle = rs.nextRequest(request)
+			} else {
+				request.close()
 			}
 		case *sshFxpOpenPacket:
 			request := requestFromPacket(ctx, pkt, rs.startDirectory)
-			handle := rs.nextRequest(request)
 			rpkt = request.open(rs.Handlers, pkt)
-			if _, ok := rpkt.(*sshFxpHandlePacket); !ok {
-				// if we return an error we have to remove the handle from the active ones
-				rs.closeRequest(handle)
+			if hpkt, ok := rpkt.(*sshFxpHandlePacket); ok {
+				// Only publish the handle once the Request is fully set up:
+				// a pipelined READ/WRITE on it is handled concurrently.
+				hpkt.Handle = rs.nextRequest(request)
+			} else {
+				request.close()
 			}
 		case *sshFxpFstatPacket:
 			handle := pkt.getHandle()

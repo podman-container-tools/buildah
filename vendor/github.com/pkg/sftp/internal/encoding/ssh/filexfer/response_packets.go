@@ -6,7 +6,7 @@ import (
 
 // StatusPacket defines the SSH_FXP_STATUS packet.
 //
-// Specified in https://filezilla-project.org/specs/draft-ietf-secsh-filexfer-02.txt#section-7
+// Specified in https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-7
 type StatusPacket struct {
 	StatusCode   Status
 	ErrorMessage string

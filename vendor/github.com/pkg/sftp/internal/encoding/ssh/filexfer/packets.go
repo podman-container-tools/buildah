@@ -17,7 +17,7 @@ const smallBufferSize = 64
 // For servers expecting to receive arbitrary request packet types,
 // use RequestPacket.
 //
-// Defined in https://filezilla-project.org/specs/draft-ietf-secsh-filexfer-02.txt#section-3
+// Defined in https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-3
 type RawPacket struct {
 	PacketType PacketType
 	RequestID  uint32
@@ -174,7 +174,7 @@ func (p *RawPacket) ReadFrom(r io.Reader, b []byte, maxPacketLength uint32) erro
 // where automatic unmarshaling of the packet body does not make sense,
 // use RawPacket.
 //
-// Defined in https://filezilla-project.org/specs/draft-ietf-secsh-filexfer-02.txt#section-3
+// Defined in https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-3
 type RequestPacket struct {
 	RequestID uint32
 

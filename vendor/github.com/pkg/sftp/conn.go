@@ -16,6 +16,9 @@ type conn struct {
 	// this is the same allocator used in packet manager
 	alloc      *allocator
 	sync.Mutex // used to serialise writes to sendPacket
+
+	closeOnce  sync.Once
+	closeErr   error
 }
 
 // the orderID is used in server mode if the allocator is enabled.
@@ -36,7 +39,10 @@ func (c *conn) sendPacket(m encoding.BinaryMarshaler) error {
 func (c *conn) Close() error {
 	c.Lock()
 	defer c.Unlock()
-	return c.WriteCloser.Close()
+	c.closeOnce.Do(func() {
+		c.closeErr = c.WriteCloser.Close()
+	})
+	return c.closeErr
 }
 
 type clientConn struct {
@@ -121,7 +127,7 @@ func (c *clientConn) putChannel(ch chan<- result, sid uint32) bool {
 	select {
 	case <-c.closed:
 		// already closed with broadcastErr, return error on chan.
-		ch <- result{err: ErrSSHFxConnectionLost}
+		ch <- result{err: connectionLostError(c.err)}
 		return false
 	default:
 	}
@@ -189,7 +195,13 @@ func (c *clientConn) broadcastErr(err error) {
 	c.Lock()
 	defer c.Unlock()
 
-	bcastRes := result{err: ErrSSHFxConnectionLost}
+	select {
+	case <-c.closed:
+		return
+	default:
+	}
+
+	bcastRes := result{err: connectionLostError(err)}
 	for sid, ch := range c.inflight {
 		ch <- bcastRes
 
@@ -201,6 +213,13 @@ func (c *clientConn) broadcastErr(err error) {
 
 	c.err = err
 	close(c.closed)
+}
+
+func connectionLostError(err error) error {
+	if err == nil {
+		return ErrSSHFxConnectionLost
+	}
+	return fmt.Errorf("%w: %w", ErrSSHFxConnectionLost, err)
 }
 
 type serverConn struct {

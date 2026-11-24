@@ -13,7 +13,7 @@ var (
 
 // Buffer wraps up the various encoding details of the SSH format.
 //
-// Data types are encoded as per section 4 from https://tools.ietf.org/html/draft-ietf-secsh-architecture-09#page-8
+// Data types are encoded as per section 4 from https://datatracker.ietf.org/doc/html/draft-ietf-secsh-architecture-09#page-8
 type Buffer struct {
 	b   []byte
 	off int
