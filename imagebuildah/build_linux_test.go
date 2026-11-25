@@ -11,35 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"go.podman.io/buildah/define"
-	"go.podman.io/storage"
 )
-
-type statusStore struct {
-	storage.Store
-	status [][2]string
-	err    error
-}
-
-func (s statusStore) Status() ([][2]string, error) {
-	return s.status, s.err
-}
-
-func TestStoreSupportsVolatile(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		store  statusStore
-		expect bool
-	}{
-		{name: "supported", store: statusStore{status: [][2]string{{"Backing Filesystem", "xfs"}, {"Supports volatile", "true"}}}, expect: true},
-		{name: "unsupported", store: statusStore{status: [][2]string{{"Supports volatile", "false"}}}, expect: false},
-		{name: "not reported", store: statusStore{status: [][2]string{{"Backing Filesystem", "xfs"}}}, expect: false},
-		{name: "error", store: statusStore{err: errors.New("no layer store")}, expect: false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.expect, storeSupportsVolatile(tc.store))
-		})
-	}
-}
 
 func TestFilesClosedProperlyByBuildDockerfiles(t *testing.T) {
 	// create files in temp dir
