@@ -149,6 +149,57 @@ type containerImageRef struct {
 	os                    string
 }
 
+// healthcheck returns the healthcheck configuration that should be used when
+// building an OCI image, taking into account configuration overrides and
+// confidential workload conversion.
+func (i *containerImageRef) healthcheck() (*manifest.Schema2HealthConfig, error) {
+	// Decode the Docker configuration which contains the healthcheck
+	// information not represented by imgspecv1.ImageConfig.
+	dimage := docker.V2Image{}
+	if err := json.Unmarshal(i.dconfig, &dimage); err != nil {
+		return nil, fmt.Errorf("decoding Docker image configuration: %w", err)
+	}
+
+	// Remember whether config existed in the original blob.
+	configWasPresent := dimage.Config != nil
+
+	if dimage.Config == nil {
+		dimage.Config = &docker.Config{}
+	}
+
+	// Apply the same overrides used when producing Docker images.
+	if err := config.OverrideDocker(dimage.Config, i.overrideChanges, i.overrideConfig); err != nil {
+		return nil, fmt.Errorf("applying Docker configuration overrides: %w", err)
+	}
+
+	// Confidential workload conversion intentionally removes healthchecks.
+	if i.confidentialWorkload.Convert {
+		return nil, nil
+	}
+
+	// Preserve the original Config/ContainerConfig precedence.
+	//
+	// If config was absent originally and no healthcheck was supplied
+	// by the overrides, retain its absence so clibs can use the legacy
+	// ContainerConfig fallback.
+	if !configWasPresent && dimage.Config.Healthcheck == nil {
+		dimage.Config = nil
+	}
+
+	configBlob, err := json.Marshal(&dimage)
+	if err != nil {
+		return nil, fmt.Errorf("encoding Docker image configuration: %w", err)
+	}
+
+	// The precedence between Config and ContainerConfig is decided by c/image.
+	healthcheck, err := manifest.Schema2HealthcheckFromConfigBlob(configBlob)
+	if err != nil {
+		return nil, fmt.Errorf("extracting image healthcheck: %w", err)
+	}
+
+	return healthcheck, nil
+}
+
 type blobLayerInfo struct {
 	ID   string
 	Size int64
@@ -601,6 +652,9 @@ type ociManifestBuilder struct {
 	layerMediaType string
 	oimage         v1.Image
 	omanifest      v1.Manifest
+
+	// The following healthcheck is a Docker-compatible extension to the OCIv1 format.
+	healthcheck *manifest.Schema2HealthConfig
 }
 
 // Build fresh copies of the container configuration structures so that we can edit them
@@ -631,6 +685,11 @@ func (i *containerImageRef) newOCIManifestBuilder() (manifestBuilder, error) {
 	// matching fields in both formats.
 	if err := config.OverrideOCI(&oimage.Config, i.overrideChanges, i.overrideConfig); err != nil {
 		return nil, fmt.Errorf("applying changes: %w", err)
+	}
+
+	healthcheck, err := i.healthcheck()
+	if err != nil {
+		return nil, fmt.Errorf("getting OCI image healthcheck: %w", err)
 	}
 
 	// If we're producing a confidential workload, override the command and
@@ -667,6 +726,7 @@ func (i *containerImageRef) newOCIManifestBuilder() (manifestBuilder, error) {
 		// The default layer media type assumes no compression.
 		layerMediaType: v1.MediaTypeImageLayer,
 		oimage:         oimage,
+		healthcheck:    healthcheck,
 		omanifest: v1.Manifest{
 			Versioned: specs.Versioned{
 				SchemaVersion: 2,
@@ -812,9 +872,10 @@ func (mb *ociManifestBuilder) buildHistory(extraImageContentDiff string, extraIm
 
 func (mb *ociManifestBuilder) manifestAndConfig() ([]byte, []byte, error) {
 	// Encode the image configuration blob.
-	oconfig, err := json.Marshal(&mb.oimage)
+	ociImage := manifest.NewOCIImageExtended(mb.oimage, mb.healthcheck)
+	oconfig, err := json.Marshal(&ociImage)
 	if err != nil {
-		return nil, nil, fmt.Errorf("encoding %#v as json: %w", mb.oimage, err)
+		return nil, nil, fmt.Errorf("encoding %#v as json: %w", ociImage, err)
 	}
 	logrus.Debugf("OCIv1 config = %s", oconfig)
 
