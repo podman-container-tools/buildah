@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"reflect"
@@ -26,7 +27,6 @@ import (
 	"time"
 
 	docker "github.com/fsouza/go-dockerclient"
-	archive "github.com/moby/go-archive"
 	mobyclient "github.com/moby/moby/client"
 	"github.com/moby/moby/client/pkg/versions"
 	digest "github.com/opencontainers/go-digest"
@@ -52,6 +52,8 @@ import (
 	"go.podman.io/image/v5/types"
 	"go.podman.io/storage"
 	"go.podman.io/storage/pkg/ioutils"
+
+	archive "github.com/moby/go-archive"
 	"go.podman.io/storage/pkg/reexec"
 )
 
@@ -693,9 +695,9 @@ func buildUsingDocker(t *testing.T, client *docker.Client, mobyClient *mobyclien
 	// read the Dockerfile so that we can pull base images
 	dockerfileContent, err := os.ReadFile(dockerfileName)
 	require.NoErrorf(t, err, "reading dockerfile %q", dockerfileName)
-	for line := range strings.SplitSeq(string(dockerfileContent), "\n") {
-		line = strings.TrimSpace(line)
-		if after, ok := strings.CutPrefix(line, "# syntax="); ok {
+	for dockerLine := range strings.SplitSeq(string(dockerfileContent), "\n") {
+		dockerLine = strings.TrimSpace(dockerLine)
+		if after, ok := strings.CutPrefix(dockerLine, "# syntax="); ok {
 			pullImageIfMissing(t, client, after)
 		}
 	}
@@ -720,6 +722,10 @@ func buildUsingDocker(t *testing.T, client *docker.Client, mobyClient *mobyclien
 			continue
 		}
 		pullImageIfMissing(t, client, stageBase)
+	}
+
+	if test.dockerBuildCLI {
+		return buildUsingDockerCLI(t, mobyClient, test, dockerImage, contextDir, dockerfileContent, line, finalOfSeveral)
 	}
 
 	excludes, err := imagebuilder.ParseDockerignore(contextDir)
@@ -797,6 +803,46 @@ func buildUsingDocker(t *testing.T, client *docker.Client, mobyClient *mobyclien
 		assert.Nil(t, err, "error parsing reference to newly-built image with name %q", dockerImage)
 	}
 	return dockerRef, []byte(outputString)
+}
+
+func buildUsingDockerCLI(t *testing.T, mobyClient *mobyclient.Client, test testCase, dockerImage, contextDir string, dockerfileContent []byte, line int, finalOfSeveral bool) (dockerRef types.ImageReference, dockerLog []byte) {
+	dockerPath, err := exec.LookPath("docker")
+	require.NoError(t, err, "docker CLI not found in PATH (required for dockerBuildCLI)")
+
+	// Dockerfile on stdin: .dockerignore may exclude Dockerfile from the context tar.
+	args := []string{"build", "--no-cache", "-t", dockerImage, "-f", "-", contextDir}
+	for k, v := range test.buildArgs {
+		args = append(args, "--build-arg", k+"="+v)
+	}
+
+	cmd := exec.CommandContext(t.Context(), dockerPath, args...)
+	cmd.Stdin = bytes.NewReader(dockerfileContent)
+	cmd.Env = os.Environ()
+	if test.dockerBuilderVersion == docker.BuilderV1 {
+		cmd.Env = append(cmd.Env, "DOCKER_BUILDKIT=0")
+	} else {
+		cmd.Env = append(cmd.Env, "DOCKER_BUILDKIT=1")
+	}
+
+	output, err := cmd.CombinedOutput()
+	if _, pruneErr := mobyClient.BuildCachePrune(t.Context(), mobyclient.BuildCachePruneOptions{All: true}); pruneErr != nil {
+		t.Logf("docker build cache prune: %v", pruneErr)
+	}
+
+	outputString := string(output)
+	defer func() {
+		if t.Failed() {
+			t.Logf("docker build output:\n%s", outputString)
+		}
+	}()
+
+	buildPost(t, test, err, "docker build", outputString, test.dockerRegex, test.dockerErrRegex, line, finalOfSeveral)
+
+	if err == nil {
+		dockerRef, err = daemon.ParseReference(dockerImage)
+		assert.Nil(t, err, "error parsing reference to newly-built image with name %q", dockerImage)
+	}
+	return dockerRef, output
 }
 
 func buildUsingImagebuilder(t *testing.T, client *docker.Client, test testCase, imagebuilderImage, contextDir, dockerfileName string, line int, finalOfSeveral bool) (imagebuilderRef types.ImageReference, imagebuilderLog []byte) {
@@ -1440,6 +1486,7 @@ type (
 		failureRegex         string                    // if set, expect this to be present in output when the build fails
 		withoutImagebuilder  bool                      // don't build this with imagebuilder, because it depends on a buildah-specific feature
 		withoutDocker        bool                      // don't build this with docker, because it depends on a buildah-specific feature
+		dockerBuildCLI       bool                      // use "docker build" (CLI context packing); Dockerfile via stdin (-f -)
 		dockerUseBuildKit    bool                      // if building with docker, request that dockerd use buildkit
 		dockerBuilderVersion docker.BuilderVersion     // if building with docker, request the specific builder
 		testUsingSetParent   bool                      // test both with old (gets set) and new (left blank) config.Parent behavior
@@ -2324,10 +2371,10 @@ var internalTestCases = []testCase{
 	},
 
 	{
-		name:         "copy-integration1",
-		contextDir:   "dockerignore/integration1",
-		shouldFailAt: 3,
-		failureRegex: "(no such file or directory)|(file not found)|(file does not exist)",
+		name:           "copy-integration1",
+		contextDir:     "dockerignore/integration1",
+		dockerBuildCLI: true,
+		fsSkip:         []string{"(dir):subdir:mtime", "(dir):subdir:mode"},
 	},
 
 	{
@@ -3124,9 +3171,10 @@ var internalTestCases = []testCase{
 			}
 			return nil
 		},
-		fsSkip:               []string{"(dir):subdir:mtime"},
+		fsSkip:               []string{"(dir):subdir:mtime", "(dir):subdir:(dir):subdir-e:mtime", "(dir):subdir:(dir):subdir-e:mode"},
 		failOnExtraFSContent: true,
-		compatScratchConfig:  types.OptionalBoolTrue,
+		compatScratchConfig:  types.OptionalBoolFalse,
+		dockerBuildCLI:       true,
 	},
 
 	{
@@ -3146,9 +3194,10 @@ var internalTestCases = []testCase{
 			}
 			return nil
 		},
-		fsSkip:               []string{"(dir):subdir:mtime"},
+		fsSkip:               []string{"(dir):subdir:mtime", "(dir):subdir:(dir):subdir-e:mtime"},
 		failOnExtraFSContent: true,
-		compatScratchConfig:  types.OptionalBoolTrue,
+		compatScratchConfig:  types.OptionalBoolFalse,
+		dockerBuildCLI:       true,
 	},
 
 	{
@@ -3168,9 +3217,13 @@ var internalTestCases = []testCase{
 			}
 			return nil
 		},
-		fsSkip:               []string{"(dir):subdir:mtime"},
+		fsSkip: []string{
+			"(dir):subdir:mtime", "(dir):subdir:(dir):subdir-e:(dir):subdir-f:mtime",
+			"(dir):subdir:(dir):subdir-e:(dir):subdir-f:mode",
+		},
 		failOnExtraFSContent: true,
-		compatScratchConfig:  types.OptionalBoolTrue,
+		compatScratchConfig:  types.OptionalBoolFalse,
+		dockerBuildCLI:       true,
 	},
 
 	{
@@ -3190,9 +3243,10 @@ var internalTestCases = []testCase{
 			}
 			return nil
 		},
-		fsSkip:               []string{"(dir):subdir:mtime"},
+		fsSkip:               []string{"(dir):subdir:mtime", "(dir):subdir:(dir):subdir-f:mtime", "(dir):subdir:(dir):subdir-f:mode"},
 		failOnExtraFSContent: true,
-		compatScratchConfig:  types.OptionalBoolTrue,
+		compatScratchConfig:  types.OptionalBoolFalse,
+		dockerBuildCLI:       true,
 	},
 
 	{
@@ -3607,6 +3661,14 @@ var internalTestCases = []testCase{
 	},
 
 	{
+		name:                 "dockerignore-allowlist-wildcard-negation",
+		contextDir:           "dockerignore/allowlist/wildcard-negation",
+		dockerBuildCLI:       true,
+		fsSkip:               []string{"(dir):proc", "(dir):sys", "(dir):upload:mtime", "(dir):upload:(dir):cmd:mtime", "(dir):upload:(dir):cmd:mode"},
+		failOnExtraFSContent: true,
+	},
+
+	{
 		name:          "tar-g",
 		contextDir:    "tar-g",
 		withoutDocker: true,
@@ -3616,21 +3678,24 @@ var internalTestCases = []testCase{
 	{
 		name:                 "dockerignore-exceptions-skip",
 		contextDir:           "dockerignore/exceptions-skip",
-		fsSkip:               []string{"(dir):volume:mtime"},
+		dockerBuildCLI:       true,
+		fsSkip:               []string{"(dir):volume:mtime", "(dir):volume:(dir):data:mtime", "(dir):volume:mode", "(dir):volume:(dir):data:mode"},
 		failOnExtraFSContent: true,
 	},
 
 	{
 		name:                 "dockerignore-exceptions-weirdness-1",
 		contextDir:           "dockerignore/exceptions-weirdness-1",
-		fsSkip:               []string{"(dir):newdir:mtime", "(dir):newdir:(dir):subdir:mtime"},
+		dockerBuildCLI:       true,
+		fsSkip:               []string{"(dir):newdir:mtime", "(dir):newdir:(dir):subdir:mtime", "(dir):newdir:(dir):subdir:mode"},
 		failOnExtraFSContent: true,
 	},
 
 	{
 		name:                 "dockerignore-exceptions-weirdness-2",
 		contextDir:           "dockerignore/exceptions-weirdness-2",
-		fsSkip:               []string{"(dir):newdir:mtime", "(dir):newdir:(dir):subdir:mtime"},
+		dockerBuildCLI:       true,
+		fsSkip:               []string{"(dir):newdir:mtime", "(dir):newdir:(dir):subdir:mtime", "(dir):newdir:(dir):subdir:mode"},
 		failOnExtraFSContent: true,
 	},
 
