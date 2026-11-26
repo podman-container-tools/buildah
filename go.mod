@@ -21,7 +21,7 @@ require (
 	github.com/moby/sys/capability v0.5.0
 	github.com/moby/sys/devices v0.1.1
 	github.com/moby/sys/userns v0.2.1
-	github.com/opencontainers/cgroups v0.1.1
+	github.com/opencontainers/cgroups v0.1.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runc v1.5.3
