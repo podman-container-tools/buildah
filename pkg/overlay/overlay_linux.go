@@ -11,7 +11,9 @@ import (
 
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/selinux/go-selinux/label"
+	"github.com/sirupsen/logrus"
 	"go.podman.io/storage/pkg/unshare"
+	"golang.org/x/sys/unix"
 )
 
 // MountWithOptions creates ${contentDir}/merge, where ${contentDir} was
@@ -118,12 +120,24 @@ func MountWithOptions(contentDir, source, dest string, opts *Options) (mount spe
 	mount.Options = strings.Split(overlayOptions, ",")
 
 	if opts.ForceMount {
-		nativeOptions := overlayOptions
+		mounted := false
 		if opts.Volatile && !opts.ReadOnly {
-			nativeOptions += ",volatile"
+			err := mountNatively(overlayOptions+",volatile", mergeDir)
+			switch {
+			case err == nil:
+				mounted = true
+			case errors.Is(err, unix.EINVAL):
+				// Older kernels (pre-5.10) reject the volatile option;
+				// EINVAL can also come from other causes, so we only say "might".
+				logrus.Debugf("overlay volatile might not be supported, attempting mount without it: %v", err)
+			default:
+				return mount, err
+			}
 		}
-		if err := mountNatively(nativeOptions, mergeDir); err != nil {
-			return mount, err
+		if !mounted {
+			if err := mountNatively(overlayOptions, mergeDir); err != nil {
+				return mount, err
+			}
 		}
 
 		mount.Source = mergeDir

@@ -75,7 +75,7 @@ func platformSetupContextDirectoryOverlay(store storage.Store, options *define.B
 		MountLabel: mountLabel,
 		// The upper directory is removed after the build, so there is
 		// nothing to sync to disk when the overlay is unmounted.
-		Volatile: storeSupportsVolatile(store),
+		Volatile: true,
 	}
 	targetDir := filepath.Join(contentDir, "target")
 	contextDirMountSpec, err := overlay.MountWithOptions(contentDir, contextDirectoryAbsolute, targetDir, &overlayOptions)
@@ -86,21 +86,4 @@ func platformSetupContextDirectoryOverlay(store storage.Store, options *define.B
 	logrus.Debugf("mounted an overlay at %q over %q", contextDirMountSpec.Source, contextDirectoryAbsolute)
 	succeeded = true
 	return contextDirMountSpec.Source, processLabel, mountLabel, true, cleanup, nil
-}
-
-// storeSupportsVolatile reports whether the store's overlay driver found that
-// the kernel accepts the "volatile" overlay option (Linux 5.10 and later).
-// Other drivers don't report it, so they get false.
-func storeSupportsVolatile(store storage.Store) bool {
-	status, err := store.Status()
-	if err != nil {
-		logrus.Debugf("reading storage status: %v", err)
-		return false
-	}
-	for _, pair := range status {
-		if pair[0] == "Supports volatile" {
-			return pair[1] == "true"
-		}
-	}
-	return false
 }

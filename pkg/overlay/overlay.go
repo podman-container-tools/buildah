@@ -57,8 +57,8 @@ type Options struct {
 	// a writable overlay natively (ForceMount, no mount program), so that
 	// unmounting it does not sync the filesystem that holds the upper
 	// directory. Use it only when the upper directory is discarded after the
-	// overlay is unmounted, and only when the kernel supports the option
-	// (Linux 5.10 and later): the mount fails otherwise.
+	// overlay is unmounted. On kernels that reject the option (pre-5.10),
+	// the mount is retried without it.
 	Volatile bool
 }
 
