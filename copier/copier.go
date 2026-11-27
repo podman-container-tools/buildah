@@ -2280,6 +2280,12 @@ func copierHandlerGetOne(ctx context.Context, srcfi os.FileInfo, symlinkTarget, 
 		return ctx.Err()
 	default:
 	}
+	// archive/tar rounds an unspecified ModTime to the nearest second.
+	// Truncate first, the way containers/storage does, so a fraction of
+	// half a second or more does not land in the next second.
+	if hdr.Format == tar.FormatUnknown {
+		hdr.ModTime = hdr.ModTime.Truncate(time.Second)
+	}
 	// output the header
 	if err = tw.WriteHeader(hdr); err != nil {
 		return fmt.Errorf("writing header for %s (%s): %w", contentPath, hdr.Name, err)
