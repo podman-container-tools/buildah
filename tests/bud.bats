@@ -10117,8 +10117,8 @@ _EOF
   local contextdir=${TEST_SCRATCH_DIR}/context
   mkdir -p "${contextdir}"
   copy containers-storage:busybox oci-archive:"${contextdir}"/busybox.ociarchive
-  # Re-import it so we have it in OCI format and not v2s2 so we can compare
-  # image IDs later on.
+  # Re-import it so we have it in OCI format and not v2s2, so the config
+  # encoding compared below is the same on both sides.
   copy oci-archive:"${contextdir}"/busybox.ociarchive containers-storage:busybox-oci
   cat > "${contextdir}"/Containerfile << 'EOF'
 ARG TESTARG=builder
@@ -10129,12 +10129,18 @@ RUN --mount=type=bind,target=/src,rw cp /src/busybox.ociarchive /src/out.ociarch
 FROM --after=${TESTARG} oci-archive:out.ociarchive
 EOF
   run_buildah build $WITH_POLICY_JSON --jobs=4 -t test-after "${contextdir}"
-  # Verify the final image is identical to the OCI-converted busybox
-  run_buildah inspect --format '{{.FromImageID}}' busybox-oci
-  local busybox_id="$output"
-  run_buildah inspect --format '{{.FromImageID}}' test-after
-  local test_after_id="$output"
-  assert "$busybox_id" == "$test_after_id"
+  # Verify the final image is identical to the OCI-converted busybox.
+  # Compare the config digests rather than the image IDs: the ID is an
+  # implementation detail of the storage backend, while for simple images
+  # like this one, the config uniquely identifies the image.  Note that this
+  # is not a general replacement for the image ID: partially-pulled images can
+  # share a config digest with other images.
+  run_buildah inspect --type=image --format '{{.Manifest}}' busybox-oci
+  local busybox_config_digest
+  busybox_config_digest=$(jq -r .config.digest <<<"$output")
+  run_buildah inspect --type=image --format '{{.Manifest}}' test-after
+  assert "$(jq -r .config.digest <<<"$output")" = "$busybox_config_digest" \
+         "final image has the same config digest as the OCI-converted busybox"
 }
 
 @test "bud with FROM --after and COPY --from" {
