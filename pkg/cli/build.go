@@ -24,7 +24,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"go.podman.io/buildah/define"
-	"go.podman.io/buildah/internal/output"
+	"go.podman.io/buildah/pkg/buildoutput"
 	"go.podman.io/buildah/pkg/parse"
 	"go.podman.io/buildah/pkg/tmpdir"
 	"go.podman.io/buildah/pkg/util"
@@ -336,11 +336,11 @@ func GenBuildOptions(c *cobra.Command, inputArgs []string, iopts BuildOptions) (
 		for _, buildOutput := range iopts.BuildOutputs {
 			// if any of these go to stdout, we need to avoid
 			// interspersing our random output in with it
-			buildOption, err := output.GetBuildOutput(buildOutput)
+			buildOption, err := buildoutput.GetBuildOutput(buildOutput)
 			if err != nil {
 				return options, nil, nil, err
 			}
-			if buildOption.Type == output.BuildOutputStdout {
+			if buildOption.Type == buildoutput.TypeStdout {
 				iopts.Quiet = true
 			}
 		}
