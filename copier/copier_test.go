@@ -4597,3 +4597,39 @@ func testAttemptUnpackDockerCompatibility(t *testing.T) {
 	_, err = os.Stat(extractedNestedPath)
 	assert.True(t, os.IsNotExist(err), "contents of nested.tar.gz should not have been extracted")
 }
+
+// A fractional mtime of 0.5s or more must keep its second. archive/tar
+// rounds an unspecified header to the nearest second, which makes a
+// timestamp-based .pyc look stale after COPY --from.
+func TestGetTruncatesFractionalModTime(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "m.py")
+	require.NoError(t, os.WriteFile(path, []byte("X = 1\n"), 0o644))
+	base := time.Unix(1_700_000_000, 0)
+
+	for _, tc := range []struct {
+		name string
+		nsec int
+	}{
+		{name: "low", nsec: 200_000_000},
+		{name: "high", nsec: 700_000_000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srcTime := time.Unix(base.Unix(), int64(tc.nsec))
+			require.NoError(t, os.Chtimes(path, srcTime, srcTime))
+			stored, err := os.Lstat(path)
+			require.NoError(t, err)
+			if tc.nsec >= 500_000_000 {
+				require.GreaterOrEqual(t, stored.ModTime().Nanosecond(), 500_000_000, "filesystem dropped the fractional mtime, so this test cannot see the rounding")
+			}
+			want := stored.ModTime().Truncate(time.Second).Unix()
+
+			var buf bytes.Buffer
+			require.NoError(t, Get(root, root, GetOptions{}, []string{"m.py"}, &buf))
+			hdr, err := tar.NewReader(&buf).Next()
+			require.NoError(t, err)
+			assert.Equal(t, "m.py", hdr.Name)
+			assert.Equal(t, want, hdr.ModTime.Unix())
+		})
+	}
+}
