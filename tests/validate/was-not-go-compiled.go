@@ -16,9 +16,10 @@ func main() {
 		if err != nil {
 			log.Fatal("reading: ", err)
 		}
-		reader, err := gzip.NewReader(bytes.NewReader(compressed))
+		var reader io.Reader
+		reader, err = gzip.NewReader(bytes.NewReader(compressed))
 		if err != nil {
-			log.Fatal("decompressing: ", err, " in ", arg)
+			reader = bytes.NewReader(compressed)
 		}
 		contents, err := io.ReadAll(reader)
 		if err != nil {
