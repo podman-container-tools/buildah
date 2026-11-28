@@ -11,28 +11,21 @@ import (
 	"github.com/opencontainers/runc/internal/pathrs"
 )
 
-var (
-	appArmorEnabled bool
-	checkAppArmor   sync.Once
-)
-
 // isEnabled returns true if apparmor is enabled for the host.
-func isEnabled() bool {
-	checkAppArmor.Do(func() {
-		if _, err := os.Stat("/sys/kernel/security/apparmor"); err == nil {
-			buf, err := os.ReadFile("/sys/module/apparmor/parameters/enabled")
-			appArmorEnabled = err == nil && len(buf) > 1 && buf[0] == 'Y'
-		}
-	})
-	return appArmorEnabled
-}
+var isEnabled = sync.OnceValue(func() bool {
+	if _, err := os.Stat("/sys/kernel/security/apparmor"); err != nil {
+		return false
+	}
+	buf, err := os.ReadFile("/sys/module/apparmor/parameters/enabled")
+	return err == nil && len(buf) > 0 && buf[0] == 'Y'
+})
 
-func setProcAttr(attr, value string) error {
-	attr = pathrs.LexicallyCleanPath(attr)
-	attrSubPath := "attr/apparmor/" + attr
+// changeOnExec reimplements aa_change_onexec from libapparmor in Go.
+func changeOnExec(name string) error {
+	attrSubPath := "attr/apparmor/exec"
 	if _, err := os.Stat("/proc/self/" + attrSubPath); errors.Is(err, os.ErrNotExist) {
 		// fall back to the old convention
-		attrSubPath = "attr/" + attr
+		attrSubPath = "attr/exec"
 	}
 
 	// Under AppArmor you can only change your own attr, so there's no reason
@@ -45,16 +38,12 @@ func setProcAttr(attr, value string) error {
 	defer closer()
 	defer f.Close()
 
-	_, err = f.WriteString(value)
-	return err
-}
-
-// changeOnExec reimplements aa_change_onexec from libapparmor in Go.
-func changeOnExec(name string) error {
-	if err := setProcAttr("exec", "exec "+name); err != nil {
-		return fmt.Errorf("apparmor failed to apply profile: %w", err)
+	_, err = f.WriteString("exec " + name)
+	if errors.Is(err, unix.ENOENT) {
+		// ENOENT from write here is AppArmor telling the profile is unknown.
+		err = errors.New("profile not loaded")
 	}
-	return nil
+	return err
 }
 
 // applyProfile will apply the profile with the specified name to the process
@@ -64,5 +53,9 @@ func applyProfile(name string) error {
 		return nil
 	}
 
-	return changeOnExec(name)
+	err := changeOnExec(name)
+	if err != nil {
+		return fmt.Errorf("unable to apply apparmor profile %q: %w", name, err)
+	}
+	return nil
 }
